@@ -1,0 +1,33 @@
+{
+  "summary": "Verified Leaflet+OSM map fix on Expo web preview. Explore, Walk detail, and Create tab now render a real interactive Leaflet map (no more 'Map preview - full interaction on mobile' fallback). Attribution 'Leaflet | (c) OpenStreetMap' visible, tiles load, and colored walk-marker pins are placed. Walk detail shows Leaflet map with 3 color-coded polylines (green/orange/red) + 8 POI/Hazard markers and the Off-leash/Caution/Leash legend. Create tab renders Leaflet map (no red screen) with mode-draw / mode-record toggles working. Regression checks pass: sort-recommended and sort-rating chips, open-digest modal, open-filters + apply-filters modal, fav-mini/fav-detail/share-btn all present and interactive. Login uses testIDs 'auth-email-input' / 'auth-password-input' / 'auth-submit-button' (credentials prefilled).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Create tab / DoggoMap (web)", "issue": "Tapping on the Leaflet map in Draw mode did not add route points during automated tap simulation (0 polylines/points registered after two page.mouse.click on map center). The Leaflet 'click' handler wired in DoggoMap.tsx (line 119) fires from map.on('click', ...) and propagates to props.onPress -> addPoint. Automated mouse.click may not translate to Leaflet's click event in all cases; needs manual re-verification. Not blocking, but flagging so main agent can confirm map-tap point drawing works when a real user taps on web. On mobile native the react-native-maps onPress is used and should be fine.", "testID": "create-map", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "global (web)", "issue": "Console warning repeated on every screen: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Non-blocking but should migrate the shadow* usages to boxShadow for RN Web / RN 0.75+ compatibility."},
+      {"component": "app/walk/[id].tsx toast", "issue": "Console warning: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Reference: /app/frontend/app/walk/[id].tsx:259 uses <View pointerEvents=\"none\" ...> - move to style={{ pointerEvents: 'none' }}."}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_doggo_api.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "(Optional) Verify manually that tapping the Leaflet map on Create (web) actually adds route points. Automated mouse.click did not trigger Leaflet's click event in Playwright; a real human tap should work but worth a quick sanity check.",
+    "(Cleanup) Note that the review request mentions 'sort-nearest' but the actual testID in code is 'sort-distance' (label 'Nearest'). Consider renaming for consistency, or updating the request doc.",
+    "(Cleanup) Migrate deprecated `shadow*` style props to `boxShadow` and replace `<View pointerEvents=\"none\">` with `style={{ pointerEvents: 'none' }}` on walk/[id].tsx line 259."
+  ],
+  "critical_code_review_comments": [
+    "DoggoMap.tsx web implementation cleanly loads Leaflet + CSS from unpkg CDN with a shared promise (no duplicate loads). Uses divIcon for colored dot markers, polyline for segments, and invalidateSize() after mount to fix zero-size container issues. Good pattern.",
+    "The web Leaflet map correctly recenters when initialRegion changes (line 136 useEffect) and clears/re-adds layers when segments/markers change (line 170). Cleanup on unmount via map.remove() is present.",
+    "No hardcoded credentials or URLs in DoggoMap - CDN URLs (unpkg) are static third-party assets, acceptable for MVP."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (frontend-only review)", "frontend": "~95% - all Leaflet map assertions pass on Explore, Walk detail, and Create; only unconfirmed item is programmatic click-to-add-point on Create map"},
+  "seed_data_creation": "No new seed data created this iteration.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Login testIDs: auth-email-input, auth-password-input, auth-submit-button (creds prefilled with demo@doggo.app/demo1234). To validate Leaflet on any screen: wait for '.leaflet-container' then '.leaflet-tile-loaded' (up to 15s). Attribution selector: .leaflet-control-attribution. Colored marker pins render as '.leaflet-marker-icon' (divIcon). Polylines render as SVG paths under '.leaflet-overlay-pane path'. Walk-detail leaflet-container may appear twice in the DOM (Explore map still mounted under stack navigator) - use nth or last() when asserting visibility.",
+  "rca_of_issue": "Original bug: user did not see a Google Map on the web prototype because react-native-maps is native-only; the previous web fallback rendered an inert SVG placeholder labeled 'Map preview - full interaction on mobile'. Fix applied by main agent: DoggoMap.tsx now dynamically injects Leaflet CSS+JS from unpkg (leaflet@1.9.4) on web, creates a real L.map with OpenStreetMap tiles, and renders polylines (segments) + divIcon markers. Verified: '.leaflet-container' present, tiles loaded ('.leaflet-tile-loaded' count = 8 on Explore), attribution 'Leaflet | (c) OpenStreetMap' visible, 5 walk pins on Explore, 8 markers + 3 polylines on walk detail. Native (iOS/Android) path unchanged - still uses react-native-maps with PROVIDER_GOOGLE on Android."
+}

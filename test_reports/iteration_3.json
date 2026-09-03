@@ -1,0 +1,26 @@
+{
+  "summary": "WEB regression test after DoggoMap refactor (react-native-webview + Leaflet on native, Leaflet direct on web). All critical web regression checks PASS. Bundle loads without errors, no 'Cannot find module react-native-webview' or 'WebView is not defined' errors on web (WebView is scoped inside NativeMapImpl which is not evaluated when Platform.OS === 'web'). Login → tabs → Explore Leaflet map (leaflet-container present, 8 tiles loaded, 5 colored walk markers) → filter chip env-chip-forest → sort chips (sort-recommended / sort-distance / sort-rating) → open/close digest modal → open walk-mini → walk detail Leaflet map with 3 colored polylines (green/orange/red) + POI/hazard markers visible → share-btn + fav-detail interactive → back-btn navigation. Zero console errors, zero pageerrors. Source-code review confirms NativeMapImpl uses `require('react-native-webview').WebView` only inside the function body, so tree-shaking / lazy evaluation prevents web-side crashes. Manual verification on Android/iOS Expo Go will be done by the user as noted in the request.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_2.json (context)"],
+  "action_items": [
+    "None blocking. Web regression clean. User to manually verify on Android device via Expo Go that the WebView+Leaflet map renders (no more Google black-screen). Confirm map tap on native (WebView 'click' post-message flow) adds route points on Create screen."
+  ],
+  "critical_code_review_comments": [
+    "DoggoMap.tsx (line 261) correctly routes web to WebMapImpl (Leaflet directly). NativeMapImpl (line 109) lazily requires 'react-native-webview' inside the function body, so on web where Platform.OS === 'web', NativeMapImpl is never invoked and Metro/webpack never resolves the require path at runtime. This is safe.",
+    "buildHtml() (line 34) produces a self-contained Leaflet HTML page loaded via WebView source.html. Uses window.ReactNativeWebView.postMessage bridge for 'ready', 'press', 'markerPress' events — proper pattern. injectJavaScript(`window.__renderData(...)`) is used to push segments/markers reactively after 'ready'.",
+    "One improvement (non-blocking): calcZoom() is captured in buildHtml at HTML generation time; a later region change on native only updates map.setView center (window.__setRegion) but zoom stays fixed at initial value (line 86). Consider recomputing zoom from the new latDelta/lngDelta when updating region on native. Not a regression from this change (web has same behavior)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (frontend-only)", "frontend": "100% for web regression scope — Explore leaflet OK (8 tiles, 5 markers), walk detail leaflet OK (polylines+markers), share/fav/back all working, 0 console errors, 0 pageerrors, no WebView-related errors on web bundle"},
+  "seed_data_creation": "None (test used seeded demo@doggo.app / demo1234).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Web preview URL: EXPO_PUBLIC_BACKEND_URL. Login testIDs auth-email-input/auth-password-input/auth-submit-button (prefilled). Correct testIDs on walk detail: comment-input, post-comment (NOT comment-submit), open-confirm (NOT confirm-walk-btn), share-btn, fav-detail, back-btn. Explore: env-chip-<env>, sort-recommended/sort-distance/sort-rating, open-digest/close-digest, walk-mini-<id>. Two .leaflet-container elements may coexist under stack navigator (Explore stays mounted while walk detail is pushed) — use .last() or nth-index when asserting on walk detail. Native (Android/iOS) map path cannot be exercised from Playwright web — user validates on device.",
+  "rca_of_issue": "Reported bug (Android black screen with only Google logo) is the classic 'missing Google Maps API key with PROVIDER_GOOGLE' symptom on react-native-maps. Main agent's fix replaces the native map with a WebView rendering Leaflet+OSM (no key required). Regression risk on web was that the new require('react-native-webview') might blow up the web bundle — verified NOT the case: require is inside NativeMapImpl (a functional component's body) and Platform.OS === 'web' short-circuits to WebMapImpl before the require executes. Web preview loads and runs cleanly with 0 errors."
+}
