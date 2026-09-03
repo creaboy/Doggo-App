@@ -4,14 +4,11 @@ import { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AuthProvider, useAuth } from "../src/AuthContext";
+import { FavoritesProvider } from "../src/FavoritesContext";
+import { NearbyAlertsBanner } from "../src/NearbyAlerts";
 import { colors } from "../src/theme";
 
 LogBox.ignoreAllLogs(true);
-
-// Prewarm icon assets (do not remove)
-try {
-  // Kept intentionally minimal — no @expo/vector-icons in use here.
-} catch {}
 
 function Gate() {
   const { user, loading } = useAuth();
@@ -32,7 +29,12 @@ function Gate() {
       </View>
     );
   }
-  return <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.surface } }} />;
+  return (
+    <FavoritesProvider>
+      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.surface } }} />
+      <NearbyAlertsBanner />
+    </FavoritesProvider>
+  );
 }
 
 export default function RootLayout() {

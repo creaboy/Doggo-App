@@ -1,6 +1,6 @@
 import { Tabs } from "expo-router";
-import { View, Text, Platform } from "react-native";
-import { MapTrifold, MagnifyingGlass, Plus, User } from "phosphor-react-native";
+import { Platform } from "react-native";
+import { MapTrifold, Heart, Plus, User } from "phosphor-react-native";
 import { colors } from "../../src/theme";
 
 export default function TabsLayout() {
@@ -23,9 +23,9 @@ export default function TabsLayout() {
         title: "Explore",
         tabBarIcon: ({ color, size }) => <MapTrifold color={color} size={size} weight="regular" />,
       }} />
-      <Tabs.Screen name="search" options={{
-        title: "Search",
-        tabBarIcon: ({ color, size }) => <MagnifyingGlass color={color} size={size} weight="regular" />,
+      <Tabs.Screen name="favorites" options={{
+        title: "Favorites",
+        tabBarIcon: ({ color, size }) => <Heart color={color} size={size} weight="regular" />,
       }} />
       <Tabs.Screen name="create" options={{
         title: "Create",
@@ -35,6 +35,7 @@ export default function TabsLayout() {
         title: "Profile",
         tabBarIcon: ({ color, size }) => <User color={color} size={size} weight="regular" />,
       }} />
+      <Tabs.Screen name="search" options={{ href: null }} />
     </Tabs>
   );
 }

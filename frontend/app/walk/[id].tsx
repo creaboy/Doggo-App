@@ -2,11 +2,12 @@ import React, { useEffect, useState, useCallback } from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, TextInput, KeyboardAvoidingView, Platform, Modal } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { CaretLeft, Star, Clock, TrendUp, MapPin, Warning, CheckCircle, Drop, Car, Trash, Eye } from "phosphor-react-native";
+import { CaretLeft, Star, Clock, TrendUp, MapPin, Warning, CheckCircle, Drop, Car, Trash, Eye, Heart } from "phosphor-react-native";
 import { colors, radius, spacing } from "../../src/theme";
 import { DoggoMap, SegmentInput } from "../../src/DoggoMap";
 import { api } from "../../src/api";
 import { useAuth } from "../../src/AuthContext";
+import { useFavorites } from "../../src/FavoritesContext";
 import { environmentLabels, difficultyLabels, freedomLabels, formatDuration, timeAgo, poiTypeLabels, hazardTypeLabels, walkFreedomColor } from "../../src/labels";
 
 export default function WalkDetail() {
@@ -14,6 +15,7 @@ export default function WalkDetail() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
+  const { isFavorite, toggle } = useFavorites();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
@@ -105,7 +107,13 @@ export default function WalkDetail() {
             <CaretLeft size={22} color={colors.onSurface} />
           </Pressable>
           <Text style={styles.headerTitle} numberOfLines={1}>{walk.title}</Text>
-          <View style={{ width: 40 }} />
+          {user ? (
+            <Pressable testID="fav-detail" style={styles.backBtn} onPress={() => toggle(walk.id)}>
+              <Heart size={22} color={isFavorite(walk.id) ? colors.error : colors.onSurface} weight={isFavorite(walk.id) ? "fill" : "regular"} />
+            </Pressable>
+          ) : (
+            <View style={{ width: 40 }} />
+          )}
         </View>
 
         <View style={styles.topCard}>

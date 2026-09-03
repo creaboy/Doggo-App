@@ -321,7 +321,7 @@ async def list_walks(
 
 
 @api_router.get("/walks/{walk_id}")
-async def get_walk(walk_id: str):
+async def get_walk(walk_id: str, user=Depends(optional_user)):
     walk = await db.walks.find_one({"id": walk_id}, {"_id": 0})
     if not walk:
         raise HTTPException(status_code=404, detail="Walk not found")
@@ -332,7 +332,11 @@ async def get_walk(walk_id: str):
         "walk_id": walk_id,
         "created_at": {"$gte": datetime.now(timezone.utc) - timedelta(days=30)},
     })
-    return {"walk": walk, "pois": pois, "hazards": hazards, "comments": comments, "confirmations_30d": confirmations_30d}
+    favorited = False
+    if user:
+        fav = await db.favorites.find_one({"user_id": user["user_id"], "walk_id": walk_id})
+        favorited = fav is not None
+    return {"walk": walk, "pois": pois, "hazards": hazards, "comments": comments, "confirmations_30d": confirmations_30d, "favorited": favorited}
 
 
 def _compute_distance(segments: List[RouteSegment]) -> float:
@@ -530,6 +534,57 @@ async def my_activity(user=Depends(current_user)):
     comments = await db.comments.find({"user_id": user["user_id"]}, {"_id": 0}).sort("created_at", -1).to_list(50)
     ratings = await db.ratings.find({"user_id": user["user_id"]}, {"_id": 0}).sort("created_at", -1).to_list(50)
     return {"comments": comments, "ratings": ratings}
+
+
+# ============ Favorites ============
+
+@api_router.post("/walks/{walk_id}/favorite")
+async def add_favorite(walk_id: str, user=Depends(current_user)):
+    walk = await db.walks.find_one({"id": walk_id})
+    if not walk:
+        raise HTTPException(status_code=404, detail="Walk not found")
+    await db.favorites.update_one(
+        {"user_id": user["user_id"], "walk_id": walk_id},
+        {"$set": {"user_id": user["user_id"], "walk_id": walk_id, "created_at": datetime.now(timezone.utc)}},
+        upsert=True,
+    )
+    return {"favorited": True}
+
+
+@api_router.delete("/walks/{walk_id}/favorite")
+async def remove_favorite(walk_id: str, user=Depends(current_user)):
+    await db.favorites.delete_one({"user_id": user["user_id"], "walk_id": walk_id})
+    return {"favorited": False}
+
+
+@api_router.get("/me/favorites")
+async def list_favorites(user=Depends(current_user)):
+    favs = await db.favorites.find({"user_id": user["user_id"]}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    ids = [f["walk_id"] for f in favs]
+    if not ids:
+        return []
+    walks = await db.walks.find({"id": {"$in": ids}}, {"_id": 0}).to_list(500)
+    # preserve favorite order
+    by_id = {w["id"]: w for w in walks}
+    return [by_id[i] for i in ids if i in by_id]
+
+
+@api_router.get("/me/favorites/hazards")
+async def favorites_hazards(user=Depends(current_user)):
+    favs = await db.favorites.find({"user_id": user["user_id"]}).to_list(500)
+    ids = [f["walk_id"] for f in favs]
+    if not ids:
+        return []
+    hazards = await db.hazards.find(
+        {"walk_id": {"$in": ids}, "status": "active"},
+        {"_id": 0},
+    ).to_list(2000)
+    # attach walk title
+    walks = await db.walks.find({"id": {"$in": ids}}, {"_id": 0, "id": 1, "title": 1}).to_list(500)
+    title_by_id = {w["id"]: w["title"] for w in walks}
+    for h in hazards:
+        h["walk_title"] = title_by_id.get(h["walk_id"], "")
+    return hazards
 
 
 @api_router.get("/")

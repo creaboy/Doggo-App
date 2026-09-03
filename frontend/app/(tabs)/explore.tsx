@@ -2,11 +2,13 @@ import React, { useEffect, useMemo, useState } from "react";
 import { View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator, RefreshControl, FlatList, Modal } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { Star, MapPin, Clock, TrendUp, X, SlidersHorizontal, List as ListIcon, MapTrifold } from "phosphor-react-native";
+import { Star, MapPin, Clock, TrendUp, X, SlidersHorizontal, List as ListIcon, MapTrifold, Heart } from "phosphor-react-native";
 import { colors, radius, spacing } from "../../src/theme";
 import { api } from "../../src/api";
 import { DoggoMap } from "../../src/DoggoMap";
 import { environmentLabels, difficultyLabels, freedomLabels, formatDuration, timeAgo, walkFreedomColor } from "../../src/labels";
+import { useFavorites } from "../../src/FavoritesContext";
+import { useAuth } from "../../src/AuthContext";
 
 type Walk = any;
 
@@ -137,9 +139,17 @@ export default function ExploreScreen() {
 }
 
 export function MiniCard({ walk, onPress }: { walk: any; onPress: () => void }) {
+  const { user } = useAuth();
+  const { isFavorite, toggle } = useFavorites();
+  const fav = isFavorite(walk.id);
   return (
     <Pressable testID={`walk-mini-${walk.id}`} style={styles.miniCard} onPress={onPress}>
       <View style={[styles.miniStrip, { backgroundColor: walkFreedomColor[walk.dog_freedom] }]} />
+      {user && (
+        <Pressable testID={`fav-mini-${walk.id}`} hitSlop={8} style={styles.miniFav} onPress={() => toggle(walk.id)}>
+          <Heart size={18} color={fav ? colors.error : colors.muted} weight={fav ? "fill" : "regular"} />
+        </Pressable>
+      )}
       <View style={{ padding: spacing.md, gap: 4 }}>
         <Text style={styles.miniTitle} numberOfLines={1}>{walk.title}</Text>
         <Text style={styles.miniSub} numberOfLines={1}>{environmentLabels[walk.environment]} · {difficultyLabels[walk.difficulty]}</Text>
@@ -154,12 +164,22 @@ export function MiniCard({ walk, onPress }: { walk: any; onPress: () => void }) 
 }
 
 export function WalkCard({ walk, onPress }: { walk: any; onPress: () => void }) {
+  const { user } = useAuth();
+  const { isFavorite, toggle } = useFavorites();
+  const fav = isFavorite(walk.id);
   return (
     <Pressable testID={`walk-card-${walk.id}`} style={styles.card} onPress={onPress}>
       <View style={styles.cardRow}>
         <View style={[styles.cardStripe, { backgroundColor: walkFreedomColor[walk.dog_freedom] }]} />
         <View style={{ flex: 1, padding: spacing.md, gap: 6 }}>
-          <Text style={styles.cardTitle}>{walk.title}</Text>
+          <View style={styles.cardTitleRow}>
+            <Text style={styles.cardTitle} numberOfLines={1}>{walk.title}</Text>
+            {user && (
+              <Pressable testID={`fav-card-${walk.id}`} hitSlop={8} onPress={() => toggle(walk.id)}>
+                <Heart size={20} color={fav ? colors.error : colors.muted} weight={fav ? "fill" : "regular"} />
+              </Pressable>
+            )}
+          </View>
           <Text style={styles.cardSub}>{environmentLabels[walk.environment]} · {difficultyLabels[walk.difficulty]} · {freedomLabels[walk.dog_freedom]}</Text>
           <View style={styles.statsRow}>
             <Stat icon={<Clock size={14} color={colors.muted} />} value={formatDuration(walk.duration_min)} />
@@ -248,8 +268,9 @@ const styles = StyleSheet.create({
   carouselWrap: { position: "absolute", left: 0, right: 0 },
   emptyMini: { padding: spacing.lg, backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border },
   miniCard: { width: 240, backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, overflow: "hidden", borderWidth: 1, borderColor: colors.border, ...shadow() },
+  miniFav: { position: "absolute", right: 8, top: 12, width: 30, height: 30, borderRadius: 15, backgroundColor: colors.surfaceSecondary, alignItems: "center", justifyContent: "center", zIndex: 2, borderWidth: 1, borderColor: colors.border },
   miniStrip: { height: 4 },
-  miniTitle: { fontSize: 15, fontWeight: "700", color: colors.onSurface },
+  miniTitle: { fontSize: 15, fontWeight: "700", color: colors.onSurface, paddingRight: 28 },
   miniSub: { fontSize: 12, color: colors.muted },
   miniStatsRow: { flexDirection: "row", gap: spacing.md, marginTop: 4 },
   miniStat: { flexDirection: "row", alignItems: "center", gap: 4 },
@@ -257,7 +278,8 @@ const styles = StyleSheet.create({
   card: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, overflow: "hidden", borderWidth: 1, borderColor: colors.border },
   cardRow: { flexDirection: "row" },
   cardStripe: { width: 6 },
-  cardTitle: { fontSize: 16, fontWeight: "700", color: colors.onSurface },
+  cardTitleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm },
+  cardTitle: { flex: 1, fontSize: 16, fontWeight: "700", color: colors.onSurface },
   cardSub: { fontSize: 13, color: colors.muted },
   statsRow: { flexDirection: "row", gap: spacing.md, marginTop: 4 },
   stat: { flexDirection: "row", alignItems: "center", gap: 4 },

@@ -10,6 +10,8 @@ A "Waze for dog walks" — a mobile-first community app to discover, share and k
 - **Community** — rate, comment, confirm walk accuracy, report changes (new hazard, path closed, etc.), confirm/resolve individual hazards.
 - **Auth** — email/password + Emergent Google Auth. Guest browsing available.
 - **Profile** — user's walks, stats, recent comments, logout.
+- **Favorites** — heart button on every walk card & detail; dedicated Favorites tab listing saved walks.
+- **Nearby Alerts** — foreground location watcher; red banner alert when within 300m of any active hazard on a favorited walk; tap banner to jump to that walk.
 
 ## Data model (Mongo)
 User, Walk (with `segments[]` incl. per-segment freedom), PointOfInterest, Hazard (with `confirmations`, `last_confirmed_at`, `expires_at` field ready for auto-expiry), Rating, Comment, WalkConfirmation.
