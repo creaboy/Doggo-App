@@ -652,6 +652,38 @@ async def weekly_digest(lat: Optional[float] = None, lng: Optional[float] = None
     return {"new_walks": new_walks, "hazards": recent_hazards, "confirmations": confirmations}
 
 
+# ============ Route snapping (OSRM public demo) ============
+
+class SnapInput(BaseModel):
+    points: List[List[float]]  # [[lat, lng], ...]
+    profile: Literal["foot", "bike", "car"] = "foot"
+
+
+@api_router.post("/routing/snap")
+async def snap_route(inp: SnapInput):
+    if len(inp.points) < 2:
+        raise HTTPException(status_code=400, detail="Need at least 2 points")
+    coords = ";".join(f"{lng},{lat}" for lat, lng in inp.points)
+    url = f"https://router.project-osrm.org/route/v1/{inp.profile}/{coords}?geometries=geojson&overview=full"
+    try:
+        async with httpx.AsyncClient(timeout=15) as h:
+            r = await h.get(url)
+        if r.status_code != 200:
+            raise HTTPException(status_code=502, detail="Routing service error")
+        data = r.json()
+        if not data.get("routes"):
+            raise HTTPException(status_code=404, detail="No route found")
+        route = data["routes"][0]
+        # geojson coords are [lng, lat]; convert back to [lat, lng]
+        snapped = [[c[1], c[0]] for c in route["geometry"]["coordinates"]]
+        return {"coordinates": snapped, "distance_km": round(route.get("distance", 0) / 1000, 2), "duration_min": int(route.get("duration", 0) / 60)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"OSRM error: {e}")
+        raise HTTPException(status_code=502, detail="Routing failed")
+
+
 @api_router.get("/")
 async def root():
     return {"message": "Doggo API"}
@@ -659,11 +691,58 @@ async def root():
 
 # ============ Seed ============
 
+SEED_VERSION = 2
+
+
+async def _snap_via_osrm(points: List[List[float]], profile: str = "foot") -> Optional[List[List[float]]]:
+    """Try to snap the given [[lat,lng],...] points to real paths via OSRM. Returns None on failure."""
+    if len(points) < 2:
+        return None
+    coords = ";".join(f"{lng},{lat}" for lat, lng in points)
+    url = f"https://router.project-osrm.org/route/v1/{profile}/{coords}?geometries=geojson&overview=full"
+    try:
+        async with httpx.AsyncClient(timeout=15) as h:
+            r = await h.get(url)
+        if r.status_code != 200:
+            return None
+        data = r.json()
+        if not data.get("routes"):
+            return None
+        return [[c[1], c[0]] for c in data["routes"][0]["geometry"]["coordinates"]]
+    except Exception as e:
+        logger.warning(f"OSRM snap failed: {e}")
+        return None
+
+
+async def _snap_segments(segments: List[dict]) -> List[dict]:
+    out = []
+    for seg in segments:
+        snapped = await _snap_via_osrm(seg["coordinates"], profile="foot")
+        out.append({"freedom": seg["freedom"], "coordinates": snapped or seg["coordinates"]})
+    return out
+
+
 async def seed_data():
-    count = await db.walks.count_documents({})
-    if count > 0:
+    version_doc = await db.config.find_one({"key": "seed_version"})
+    current_version = version_doc["value"] if version_doc else 0
+    demo_id = "user_demo0001"
+
+    if current_version >= SEED_VERSION:
         return
-    logger.info("Seeding demo data...")
+
+    logger.info(f"Seeding demo data (v{SEED_VERSION})...")
+
+    # Wipe previously seeded walks + child records (preserve user-created walks)
+    old = await db.walks.find({"created_by": demo_id}, {"_id": 0, "id": 1}).to_list(500)
+    old_ids = [w["id"] for w in old]
+    if old_ids:
+        await db.walks.delete_many({"id": {"$in": old_ids}})
+        await db.pois.delete_many({"walk_id": {"$in": old_ids}})
+        await db.hazards.delete_many({"walk_id": {"$in": old_ids}})
+        await db.ratings.delete_many({"walk_id": {"$in": old_ids}})
+        await db.comments.delete_many({"walk_id": {"$in": old_ids}})
+        await db.walk_confirmations.delete_many({"walk_id": {"$in": old_ids}})
+        await db.favorites.delete_many({"walk_id": {"$in": old_ids}})
 
     # Demo user
     demo_id = "user_demo0001"
@@ -741,17 +820,23 @@ async def seed_data():
             "duration_min": 45, "difficulty": "easy", "environment": "city", "dog_freedom": "leash",
             "features": ["water", "shade"],
             "segments": [
+                # 4 corners of Parc Montsouris — OSRM will snap along real park paths
                 {"freedom": "leash", "coordinates": [
-                    [48.8221, 2.3378], [48.8225, 2.3390], [48.8232, 2.3400], [48.8240, 2.3395],
-                    [48.8242, 2.3378], [48.8235, 2.3368], [48.8221, 2.3378],
+                    [48.8215, 2.3355],  # SW entrance (Bd Jourdan / rue Nansouty)
+                    [48.8225, 2.3355],  # west side path
+                    [48.8237, 2.3380],  # north-west, near lake
+                    [48.8237, 2.3410],  # north-east side
+                    [48.8225, 2.3418],  # east side
+                    [48.8215, 2.3395],  # south side
+                    [48.8215, 2.3355],  # back to start
                 ]},
             ],
             "pois": [
-                {"type": "water", "lat": 48.8232, "lng": 2.3400, "description": "Fontaine potable"},
-                {"type": "trash", "lat": 48.8225, "lng": 2.3390, "description": "Sacs à déjections"},
+                {"type": "water", "lat": 48.8231, "lng": 2.3393, "description": "Fontaine potable près du lac"},
+                {"type": "trash", "lat": 48.8221, "lng": 2.3370, "description": "Sacs à déjections"},
             ],
             "hazards": [
-                {"type": "dogs_prohibited", "lat": 48.8240, "lng": 2.3395, "description": "Aire de jeux interdite"},
+                {"type": "dogs_prohibited", "lat": 48.8228, "lng": 2.3405, "description": "Aire de jeux interdite"},
             ],
         },
         {
@@ -760,29 +845,32 @@ async def seed_data():
             "duration_min": 90, "difficulty": "sporty", "environment": "beach", "dog_freedom": "partial",
             "features": ["water", "swimming", "parking"],
             "segments": [
+                # Real coastal path along Côte Sauvage west side
                 {"freedom": "free", "coordinates": [
-                    [47.4870, -3.1300], [47.4890, -3.1310], [47.4910, -3.1325], [47.4930, -3.1340],
+                    [47.5090, -3.1370], [47.5120, -3.1380], [47.5150, -3.1385],
                 ]},
                 {"freedom": "caution", "coordinates": [
-                    [47.4930, -3.1340], [47.4955, -3.1330], [47.4970, -3.1315],
+                    [47.5150, -3.1385], [47.5175, -3.1370],
                 ]},
                 {"freedom": "leash", "coordinates": [
-                    [47.4970, -3.1315], [47.4980, -3.1290], [47.4970, -3.1270],
+                    [47.5175, -3.1370], [47.5200, -3.1350],
                 ]},
             ],
             "pois": [
-                {"type": "swimming", "lat": 47.4930, "lng": -3.1340, "description": "Petite crique baignade chien"},
-                {"type": "parking", "lat": 47.4868, "lng": -3.1298, "description": "Parking payant l'été"},
-                {"type": "viewpoint", "lat": 47.4970, "lng": -3.1315, "description": "Vue sur l'océan"},
+                {"type": "swimming", "lat": 47.5150, "lng": -3.1385, "description": "Petite crique baignade chien"},
+                {"type": "parking", "lat": 47.5088, "lng": -3.1365, "description": "Parking Port Bara"},
+                {"type": "viewpoint", "lat": 47.5175, "lng": -3.1370, "description": "Vue sur l'océan"},
             ],
             "hazards": [
-                {"type": "cars", "lat": 47.4970, "lng": -3.1290, "description": "Route côtière fréquentée"},
+                {"type": "cars", "lat": 47.5200, "lng": -3.1350, "description": "Route côtière fréquentée"},
             ],
         },
     ]
 
     for i, w in enumerate(walks_seed):
-        segs = [RouteSegment(**s) for s in w["segments"]]
+        # Snap segments to real paths (best-effort; falls back to hand-drawn coords)
+        snapped_segs = await _snap_segments(w["segments"])
+        segs = [RouteSegment(**s) for s in snapped_segs]
         first = segs[0].coordinates[0]
         walk = Walk(
             title=w["title"], description=w["description"],
@@ -819,7 +907,8 @@ async def seed_data():
             walk_id=walk.id, user_id=demo2, accurate=True,
         ).model_dump())
 
-    logger.info("Seed complete.")
+    await db.config.update_one({"key": "seed_version"}, {"$set": {"value": SEED_VERSION}}, upsert=True)
+    logger.info(f"Seed complete (v{SEED_VERSION}).")
 
 
 @app.on_event("startup")

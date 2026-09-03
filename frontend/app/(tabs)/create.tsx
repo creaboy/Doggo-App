@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, Pressable, TextInput, ScrollView, ActivityIndic
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import * as Location from "expo-location";
-import { Play, Stop, ArrowClockwise, Check, MapTrifold, PathIcon } from "phosphor-react-native";
+import { Play, Stop, ArrowClockwise, Check, MapTrifold, PathIcon, MagicWand } from "phosphor-react-native";
 import { colors, radius, spacing } from "../../src/theme";
 import { DoggoMap, LatLng, SegmentInput } from "../../src/DoggoMap";
 import { api } from "../../src/api";
@@ -49,6 +49,25 @@ export default function CreateScreen() {
   };
   const undo = () => setPoints((p) => p.slice(0, -1));
   const clear = () => setPoints([]);
+
+  const snapToPath = async () => {
+    if (points.length < 2) { setErr("Add at least 2 points before snapping"); return; }
+    setErr("");
+    setSaving(true);
+    try {
+      const data = await api("/routing/snap", {
+        method: "POST",
+        body: JSON.stringify({
+          points: points.map((p) => [p.latitude, p.longitude]),
+          profile: "foot",
+        }),
+      });
+      const snapped = data.coordinates.map((c: number[]) => ({ latitude: c[0], longitude: c[1] }));
+      setPoints(snapped);
+    } catch (e: any) {
+      setErr("Could not snap to a path — try again or keep the direct line");
+    } finally { setSaving(false); }
+  };
 
   const startRecording = async () => {
     if (Platform.OS === "web") {
@@ -145,6 +164,10 @@ export default function CreateScreen() {
               <View style={styles.actionsRow}>
                 <Pressable testID="undo-point" style={styles.smallBtn} onPress={undo}><ArrowClockwise size={16} color={colors.onSurface} /><Text style={styles.smallBtnText}>Undo</Text></Pressable>
                 <Pressable testID="clear-points" style={styles.smallBtn} onPress={clear}><Text style={styles.smallBtnText}>Clear</Text></Pressable>
+                <Pressable testID="snap-path" style={[styles.smallBtn, { backgroundColor: colors.brandTertiary }]} onPress={snapToPath} disabled={saving}>
+                  <MagicWand size={16} color={colors.brandPrimary} weight="fill" />
+                  <Text style={[styles.smallBtnText, { color: colors.brandPrimary }]}>Snap to path</Text>
+                </Pressable>
               </View>
             </>
           ) : (

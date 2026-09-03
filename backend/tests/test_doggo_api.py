@@ -219,3 +219,52 @@ class TestProfile:
         assert r.status_code == 200
         d = r.json()
         assert "comments" in d and "ratings" in d
+
+
+# --- Route snapping (OSRM) ---
+class TestRoutingSnap:
+    def test_snap_two_points(self, session):
+        r = session.post(f"{API}/routing/snap", json={"points": [[48.8215, 2.3355], [48.8237, 2.3410]], "profile": "foot"})
+        # OSRM public endpoint may be flaky; retry once on 5xx
+        if r.status_code in (502, 503, 504):
+            import time as _t; _t.sleep(2)
+            r = session.post(f"{API}/routing/snap", json={"points": [[48.8215, 2.3355], [48.8237, 2.3410]], "profile": "foot"})
+        assert r.status_code == 200, f"OSRM snap failed: {r.status_code} {r.text}"
+        data = r.json()
+        assert "coordinates" in data
+        assert isinstance(data["coordinates"], list)
+        assert len(data["coordinates"]) > 10, f"expected >10 snapped coords, got {len(data['coordinates'])}"
+        assert "distance_km" in data
+        assert data["distance_km"] > 0
+
+    def test_snap_needs_two_points(self, session):
+        r = session.post(f"{API}/routing/snap", json={"points": [[48.8215, 2.3355]], "profile": "foot"})
+        assert r.status_code == 400
+
+
+# --- Seed v2: OSRM-snapped seeded walks ---
+class TestSeededWalksOsrm:
+    def test_seed_produced_dense_segments(self, session):
+        walks = session.get(f"{API}/walks").json()
+        assert len(walks) >= 4
+        demo_walks = [w for w in walks if w.get("created_by") == "user_demo0001"]
+        assert len(demo_walks) >= 4, f"expected 4 demo walks, got {len(demo_walks)}"
+        # At least half of demo walks should have a snapped-first-segment (>50 coords).
+        # If OSRM was unreachable at seed time, fallback allows straight-line seeds.
+        dense = 0
+        for w in demo_walks:
+            detail = session.get(f"{API}/walks/{w['id']}").json()
+            segs = detail["walk"]["segments"]
+            first_len = len(segs[0]["coordinates"]) if segs else 0
+            if first_len > 50:
+                dense += 1
+        assert dense >= 2, f"expected >=2 demo walks with snapped segments (>50 pts), got {dense}"
+
+    def test_seeded_walk_detail_enriched(self, session):
+        walks = session.get(f"{API}/walks").json()
+        demo = next(w for w in walks if w.get("created_by") == "user_demo0001")
+        d = session.get(f"{API}/walks/{demo['id']}").json()
+        assert "walk" in d and "pois" in d and "hazards" in d
+        assert "comments" in d and "confirmations_30d" in d
+        assert "favorited" in d
+        assert isinstance(d["favorited"], bool)

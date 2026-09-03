@@ -48,7 +48,7 @@ function buildHtml(
 <script>
 (function(){
   var map = L.map('m', {zoomControl: true, attributionControl: true}).setView([${region.latitude}, ${region.longitude}], ${zoom});
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19, attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'}).addTo(map);
+  L.tileLayer('https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png', {maxZoom:20, subdomains:'abc', attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'}).addTo(map);
   var layers = [];
   var userMarker = null;
 
@@ -137,7 +137,14 @@ const NativeMapImpl: React.FC<Props> = (props) => {
   };
 
   return (
-    <View style={[{ flex: 1, backgroundColor: colors.brandTertiary, overflow: "hidden" }, props.style]} testID={props.testID}>
+    <View
+      style={[{ flex: 1, backgroundColor: colors.brandTertiary, overflow: "hidden" }, props.style]}
+      testID={props.testID}
+      // capture gestures so parent ScrollView doesn't hijack pinch/pan
+      onStartShouldSetResponder={() => true}
+      onMoveShouldSetResponder={() => true}
+      onResponderTerminationRequest={() => false}
+    >
       <WebView
         ref={ref}
         originWhitelist={["*"]}
@@ -149,6 +156,8 @@ const NativeMapImpl: React.FC<Props> = (props) => {
         mixedContentMode="always"
         style={{ flex: 1, backgroundColor: colors.brandTertiary }}
         androidLayerType="hardware"
+        nestedScrollEnabled
+        scrollEnabled={false}
       />
     </View>
   );
@@ -202,9 +211,10 @@ const WebMapImpl: React.FC<Props> = (props) => {
       const region = props.initialRegion || { latitude: 48.85, longitude: 2.35, latitudeDelta: 0.1, longitudeDelta: 0.1 };
       const map = L.map(containerRef.current, { zoomControl: true, attributionControl: true })
         .setView([region.latitude, region.longitude], calcZoom(region.latitudeDelta, region.longitudeDelta));
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        maxZoom: 19,
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      L.tileLayer("https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png", {
+        maxZoom: 20,
+        subdomains: "abc",
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
       }).addTo(map);
       map.on("click", (e: any) => { if (props.onPress) props.onPress({ latitude: e.latlng.lat, longitude: e.latlng.lng }); });
       mapRef.current = map;
@@ -250,9 +260,15 @@ const WebMapImpl: React.FC<Props> = (props) => {
   useEffect(() => { if (readyRef.current) renderLayers(); }, [props.segments, props.markers]);
 
   return (
-    <View style={[{ flex: 1, backgroundColor: colors.brandTertiary, overflow: "hidden" }, props.style]} testID={props.testID}>
+    <View
+      style={[{ flex: 1, backgroundColor: colors.brandTertiary, overflow: "hidden" }, props.style]}
+      testID={props.testID}
+      onStartShouldSetResponder={() => true}
+      onMoveShouldSetResponder={() => true}
+      onResponderTerminationRequest={() => false}
+    >
       {/* @ts-ignore */}
-      <div ref={(el: any) => { containerRef.current = el; }} style={{ width: "100%", height: "100%" }} />
+      <div ref={(el: any) => { containerRef.current = el; }} style={{ width: "100%", height: "100%", touchAction: "none" }} />
     </View>
   );
 };
