@@ -1,0 +1,158 @@
+{
+  "app_name": "Doggo",
+  "personality": "1 iOS-Native Clean",
+  "personality_one_liner": "A premium, map-centric outdoor app that frames nature through clean typography and earthy tones, resembling modern hiking tools rather than cartoonish pet trackers.",
+  "color": {
+    "surface": "#FDFDFB",
+    "onSurface": "#1A1C19",
+    "surfaceSecondary": "#FFFFFF",
+    "onSurfaceSecondary": "#1A1C19",
+    "surfaceTertiary": "#F1F4EE",
+    "onSurfaceTertiary": "#2D332B",
+    "surfaceInverse": "#1A1C19",
+    "onSurfaceInverse": "#FFFFFF",
+    "brand": "#2D5A27",
+    "onBrand": "#FFFFFF",
+    "brandPrimary": "#2D5A27",
+    "onBrandPrimary": "#FFFFFF",
+    "brandSecondary": "#8B5E3C",
+    "onBrandSecondary": "#FFFFFF",
+    "brandTertiary": "#E2E8CE",
+    "onBrandTertiary": "#2D5A27",
+    "success": "#3A7D44",
+    "onSuccess": "#FFFFFF",
+    "warning": "#D97736",
+    "onWarning": "#FFFFFF",
+    "error": "#B33939",
+    "onError": "#FFFFFF",
+    "info": "#566573",
+    "onInfo": "#FFFFFF",
+    "border": "#E3E8DF",
+    "borderStrong": "#C1C9BA",
+    "divider": "#F1F4EE",
+    "muted": "#6D756A"
+  },
+  "typography": {
+    "displayFontFamily": "Geist",
+    "textFontFamily": "Geist",
+    "scale": {
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24
+    }
+  },
+  "spacing": {
+    "rule": "Generous iOS-native padding. Use whitespace to separate sections instead of heavy borders. Content frames the map, not the other way around.",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 6,
+    "md": 12,
+    "lg": 20,
+    "pill": 999
+  },
+  "shadow_tier": "1",
+  "navigation": "bottom_tabs",
+  "icon_set": "Phosphor",
+  "glassmorphism": {
+    "enabled": true,
+    "do's": [
+      "Bottom tab bar background so the map bleeds under.",
+      "Floating map controls (FABs for location, layers).",
+      "Filter row at the top of the Explore map.",
+      "Bottom sheet headers."
+    ],
+    "dont's": [
+      "Cards in list views.",
+      "Form inputs."
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-glass-effect",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "screens": [
+    {
+      "name": "Explore",
+      "purpose": "Interactive map discovery where users can see nearby walks, filter, and interact with pins.",
+      "states": {
+        "loading": "Map skeleton or centered spinner over abstract map texture.",
+        "empty": "No walks found in this area. Move map or clear filters.",
+        "error": "Failed to load walks. Check connection."
+      },
+      "layout": "Full-bleed map. Top floating glass container with Search and filter chips row. Bottom floating FAB for 'Recenter'. BottomSheet overlying the map displaying a horizontal scroll of nearby walks. Map should extend beneath transparent/glass status bar and bottom tab bar."
+    },
+    {
+      "name": "WalkDetails",
+      "purpose": "Comprehensive view of a specific walk, displaying stats, color-coded route map, and community feedback.",
+      "states": {
+        "loading": "Skeleton of hero image and title.",
+        "empty": "N/A",
+        "error": "Failed to load walk details."
+      },
+      "layout": "Hero image at top with a top-to-bottom gradient scrim (to ensure white top-bar icons are readable). Sticky bottom CTA 'Start Walk'. Content inside ScrollView: Walk Title, Stats row (distance, duration), Interactive map snippet displaying the color-coded route (Green=off-leash, Orange=caution, Red=leash). Below map: POIs list, Hazards list, and a Community Confirmation card ('Confirmed 2 days ago')."
+    },
+    {
+      "name": "CreateWalk",
+      "purpose": "Allow users to manually draw a route or record their GPS trail.",
+      "states": {
+        "loading": "Spinner during save.",
+        "empty": "N/A",
+        "error": "Failed to save walk."
+      },
+      "layout": "Top segmented control (Draw vs Record). Large map surface. Bottom sheet form for adding walk metadata (Name, Difficulty, Environment) with a sticky 'Save Walk' primary CTA. Tap map to add POIs or Hazard pins."
+    },
+    {
+      "name": "Profile",
+      "purpose": "User dashboard showing activity stats and saved walks.",
+      "states": {
+        "loading": "Skeleton cards.",
+        "empty": "Illustration of abstract landscape with 'You haven't saved any walks yet'.",
+        "error": "Failed to load profile."
+      },
+      "layout": "Header with User Name and aggregated stats (Total distance, Walks completed). Two-column grid or list for 'My Walks' and 'Saved Walks'. Clean, white cards on soft off-white surfaceTertiary."
+    }
+  ],
+  "images": {
+    "walk_hero_1": {
+      "url": "https://images.unsplash.com/photo-1744399950102-9e6d3a82babc?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2Mzl8MHwxfHNlYXJjaHwxfHxkb2clMjBoaWtpbmclMjB0cmFpbCUyMG5hdHVyZXxlbnwwfHx8fDE3ODg0NTg5NDR8MA&ixlib=rb-4.1.0&q=85",
+      "alt": "Man walks dog on a forest path"
+    },
+    "walk_hero_2": {
+      "url": "https://images.unsplash.com/photo-1714044166897-3683053e45c5?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMjh8MHwxfHNlYXJjaHwyfHxmb3Jlc3QlMjB3YWxraW5nJTIwcGF0aCUyMGxhbmRzY2FwZXxlbnwwfHx8fDE3ODg0NTg5NDR8MA&ixlib=rb-4.1.0&q=85",
+      "alt": "A path in the middle of a forest"
+    },
+    "walk_hero_3": {
+      "url": "https://images.unsplash.com/photo-1618901977251-d57dd765d2e1?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA3MDB8MHwxfHNlYXJjaHwyfHxoYXBweSUyMGRvZyUyMHJ1bm5pbmclMjBpbiUyMGZvcmVzdHxlbnwwfHx8fDE3ODg0NTg5NDR8MA&ixlib=rb-4.1.0&q=85",
+      "alt": "Happy dog running in forest"
+    },
+    "empty_state_landscape": {
+      "url": "https://images.unsplash.com/photo-1749366865255-d538eeb7f0f6?crop=entropy&cs=srgb&fm=jpg&ixid=M3w8NjY2NzF8MHwxfHNlYXJjaHwxfHxhYnN0cmFjdCUyMGdyZWVuJTIwbW91bnRhaW4lMjBsYW5kc2NhcGV8ZW58MHx8fHwxNzg4NDU4OTY5fDA&ixlib=rb-4.1.0&q=85",
+      "alt": "Abstract green mountain landscape"
+    }
+  },
+  "instructions_to_main_agent": [
+    "Strictly avoid pet-store aesthetics. Do NOT use paw prints, cartoon dogs, or bone icons. Use Phosphor icons matching an outdoor/hiking vibe (Trees, Paths, MapPins, Warning).",
+    "Map implementation is critical. Use react-native-maps. Walk routes must be segmented and color-coded explicitly using the semantic colors: success (Green) for off-leash, warning (Orange) for caution, and error (Red) for leash required.",
+    "Implement the bottom tab navigation with glassmorphism so the map bleeds under the tabs.",
+    "For WalkDetails, use the provided walk_hero images with a top-to-bottom gradient scrim to guarantee back-button visibility.",
+    "In the Community Confirmation UI, use a subtle card (surfaceSecondary) with muted text to show 'Last confirmed 2 days ago' alongside an outline button to 'Confirm / Report changes'.",
+    "POIs and Hazards should use tinted icon containers (brandTertiary rounded squares) rather than bare icons to maintain a premium look."
+  ]
+}
