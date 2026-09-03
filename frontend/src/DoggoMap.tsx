@@ -48,7 +48,7 @@ function buildHtml(
 <script>
 (function(){
   var map = L.map('m', {zoomControl: true, attributionControl: true}).setView([${region.latitude}, ${region.longitude}], ${zoom});
-  L.tileLayer('https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png', {maxZoom:20, subdomains:'abc', attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'}).addTo(map);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png', {maxZoom:20, subdomains:'abcd', attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'}).addTo(map);
   var layers = [];
   var userMarker = null;
 
@@ -211,10 +211,10 @@ const WebMapImpl: React.FC<Props> = (props) => {
       const region = props.initialRegion || { latitude: 48.85, longitude: 2.35, latitudeDelta: 0.1, longitudeDelta: 0.1 };
       const map = L.map(containerRef.current, { zoomControl: true, attributionControl: true })
         .setView([region.latitude, region.longitude], calcZoom(region.latitudeDelta, region.longitudeDelta));
-      L.tileLayer("https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png", {
+      L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png", {
         maxZoom: 20,
-        subdomains: "abc",
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
+        subdomains: "abcd",
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
       }).addTo(map);
       map.on("click", (e: any) => { if (props.onPress) props.onPress({ latitude: e.latlng.lat, longitude: e.latlng.lng }); });
       mapRef.current = map;

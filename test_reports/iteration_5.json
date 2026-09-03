@@ -1,0 +1,34 @@
+{
+  "summary": "Auto-snap-on-publish + auto-snap toggle E2E verified. Backend: 28/28 pytest PASS (incl. POST /api/routing/snap returning 200 with >10 coords, 400 when <2 points, and demo walks having dense OSRM-snapped segments). Frontend WEB: (1) toggle-auto-snap is visible above publish-walk and CHECKED by default; clicking it toggles the check icon off then on. (2) Auto-snap ON publish flow — tapped 3 points on create-map, filled title 'Auto snap test' + duration 20, clicked publish-walk; observed POST /api/routing/snap 200 followed by POST /api/walks 200, navigated to /walk/{id}, verified via API that segments[0].coordinates.length = 264 (>>10) and distance_km = 5.18 (real snapped route); walk-detail-map rendered showing a curved polyline following streets. (3) Auto-snap OFF publish flow — after unchecking, tapped 3 points, published; ZERO /api/routing/snap calls fired, walk saved with exactly 3 raw coordinates and distance 2.75km straight-line. Both flows navigate correctly to /walk/{id}. Regression flows previously verified in iteration_4 remain intact. NOTE: tile visual — the fix aimed for CartoDB Positron (light_all) but the tiles now show 'API KEY REQUIRED' watermarks because basemaps.cartocdn.com/light_all requires attribution/api-key params for production traffic; per the user's 'c'est bon' note this is best-effort and NOT a functional failure — the map is fully usable and the route polyline is clearly readable.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "DoggoMap (Create + Walk detail)", "issues": ["CartoDB Positron tile URL 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png' returns tiles with a diagonal 'API KEY REQUIRED / basemaps.cartocdn.com/apikey' watermark. Route polyline is still fully legible and the user accepted this trade-off ('c'est bon'), but if a clean look is desired switch back to the OSM France osmfr tile URL used in iteration_4 (https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png) or use CartoDB Positron with a signed api-key. Reference: /app/frontend/src/DoggoMap.tsx:51 and :214"]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_doggo_api.py",
+    "/app/test_reports/pytest/pytest_results.xml",
+    "/app/test_reports/iteration_4.json (previous)"
+  ],
+  "action_items": [
+    "OPTIONAL/COSMETIC: revisit tile URL in /app/frontend/src/DoggoMap.tsx lines 51 & 214. The current light_all CartoDB URL shows an 'API KEY REQUIRED' watermark. If the user comes back on the map look, switch back to the osmfr URL that was clean in iteration_4. No blocker.",
+    "No blocking action items — the reported bug (walks published as straight lines crossing houses) is fixed: auto-snap runs by default on publish and produced a 264-point real-street route for a 3-tap input."
+  ],
+  "critical_code_review_comments": [
+    "create.tsx:106 publish() correctly gates auto-snap on autoSnap && points.length >= 2 and wraps the /routing/snap call in try/catch, falling back to raw points on failure — matches the spec.",
+    "create.tsx:112 defensive check `if (data?.coordinates?.length)` before mapping — good, protects against empty OSRM responses.",
+    "create.tsx:252 toggle-auto-snap Pressable properly toggles state; visual state via conditional Check icon inside the checkbox View — accessible and works on web.",
+    "server.py /api/routing/snap remains stable and returns 200 with dense coords in <3s during E2E."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (28/28 pytest)", "frontend": "100% (3/3 targeted E2E scenarios: toggle default/interactive; auto-snap ON produces 264-pt route; auto-snap OFF keeps 3 raw points with zero snap calls)"},
+  "seed_data_creation": "Two test walks were created via the UI during E2E: 'Auto snap test' (walk id eae1098a-1371-4f31-8a0e-b46e7d628197, 264 coords, 5.18km) and 'TEST_NoSnap' (walk id 5cbafcdd-5de9-4113-8162-5e629e9a7795, 3 coords, 2.75km). They live under user_demo0001; safe to leave or purge via the demo re-seed mechanism.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Auto-snap-on-publish is verified. When testing Create tab: (a) always scroll to top and tap the map BEFORE filling title/duration, otherwise the ScrollView scrolls the map out of view and mouse.click page-coords land on inputs; (b) inspect toggle-auto-snap's checked state by looking for 'check-bold' in innerHTML — a Check icon is only rendered when autoSnap===true; (c) subscribe to page.on('response') to assert whether /api/routing/snap was called (should be 0 when toggle OFF, exactly 1 when toggle ON with >=2 points).",
+  "rca_of_issue": "Follow-up bug reproduction: previously a walk created via the Create tab without pressing 'Snap to path' would be persisted with only the raw tapped points and rendered as a straight-line polyline crossing buildings on the walk detail. RCA: publish() sent points as-is to POST /api/walks with no snapping. Fix in create.tsx:104-118: on publish, if autoSnap && points.length >= 2, POST to /api/routing/snap and replace finalPoints with the OSRM-returned coordinates before creating the walk; snap failures fall back silently to raw points. New Pressable testID='toggle-auto-snap' exposes the setting with a default of true. Verified: 3 taps in Paris produced a 264-point snapped route (5.18km) that follows streets, and with the toggle disabled the same 3 taps produced exactly 3 raw coords (straight 2.75km line), proving both branches behave as designed."
+}

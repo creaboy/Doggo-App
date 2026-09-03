@@ -29,6 +29,7 @@ export default function CreateScreen() {
   const [duration, setDuration] = useState("30");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
+  const [autoSnap, setAutoSnap] = useState(true);
   const [initialRegion, setInitialRegion] = useState<any>({ latitude: 48.85, longitude: 2.35, latitudeDelta: 0.05, longitudeDelta: 0.05 });
 
   useEffect(() => {
@@ -100,7 +101,21 @@ export default function CreateScreen() {
     if (!dmin || dmin < 1) { setErr("Enter a valid duration"); return; }
     setSaving(true);
     try {
-      const segment: SegmentInput = { coordinates: points, freedom };
+      // auto-snap to real paths unless user disabled it
+      let finalPoints = points;
+      if (autoSnap && points.length >= 2) {
+        try {
+          const data = await api("/routing/snap", {
+            method: "POST",
+            body: JSON.stringify({ points: points.map((p) => [p.latitude, p.longitude]), profile: "foot" }),
+          });
+          if (data?.coordinates?.length) {
+            finalPoints = data.coordinates.map((c: number[]) => ({ latitude: c[0], longitude: c[1] }));
+          }
+        } catch {
+          // snap failed, fall back to raw points silently
+        }
+      }
       const walk = await api("/walks", {
         method: "POST",
         body: JSON.stringify({
@@ -109,7 +124,7 @@ export default function CreateScreen() {
           difficulty, environment,
           dog_freedom: dogFreedom,
           duration_min: dmin,
-          segments: [{ freedom, coordinates: points.map((p) => [p.latitude, p.longitude]) }],
+          segments: [{ freedom, coordinates: finalPoints.map((p) => [p.latitude, p.longitude]) }],
           features: [],
           pois: [], hazards: [],
         }),
@@ -234,6 +249,16 @@ export default function CreateScreen() {
 
           {!!err && <Text style={styles.err}>{err}</Text>}
 
+          <Pressable testID="toggle-auto-snap" style={styles.snapToggleRow} onPress={() => setAutoSnap((v) => !v)}>
+            <View style={[styles.checkbox, autoSnap && styles.checkboxOn]}>
+              {autoSnap && <Check size={14} color="#fff" weight="bold" />}
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.snapToggleTitle}>Auto-snap to real paths</Text>
+              <Text style={styles.snapToggleSub}>Route will follow streets and trails when published</Text>
+            </View>
+          </Pressable>
+
           <Pressable testID="publish-walk" style={styles.primaryBtn} onPress={publish} disabled={saving}>
             {saving ? <ActivityIndicator color="#fff" /> : (<><Check size={18} color="#fff" /><Text style={styles.primaryBtnText}>Publish walk</Text></>)}
           </Pressable>
@@ -267,6 +292,11 @@ const styles = StyleSheet.create({
   dot: { width: 10, height: 10, borderRadius: 5 },
   input: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: 12, fontSize: 15, color: colors.onSurface, backgroundColor: colors.surfaceSecondary },
   err: { color: colors.error, fontSize: 13, marginTop: spacing.sm },
+  snapToggleRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, padding: spacing.md, marginTop: spacing.sm },
+  checkbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: colors.borderStrong, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceSecondary },
+  checkboxOn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
+  snapToggleTitle: { fontSize: 14, fontWeight: "700", color: colors.onSurface },
+  snapToggleSub: { fontSize: 12, color: colors.muted, marginTop: 2 },
   primaryBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 14, marginTop: spacing.md },
   primaryBtnText: { color: colors.onBrand, fontWeight: "700", fontSize: 15 },
 });
