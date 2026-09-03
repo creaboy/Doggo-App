@@ -12,6 +12,9 @@ A "Waze for dog walks" — a mobile-first community app to discover, share and k
 - **Profile** — user's walks, stats, recent comments, logout.
 - **Favorites** — heart button on every walk card & detail; dedicated Favorites tab listing saved walks.
 - **Nearby Alerts** — foreground location watcher; red banner alert when within 300m of any active hazard on a favorited walk; tap banner to jump to that walk.
+- **Share Walk** — share icon on walk detail; native OS share sheet on mobile, `navigator.share` on web with clipboard fallback + toast.
+- **Weekly Digest** — sparkle icon on Explore header opens "This week on Doggo" modal: new walks, fresh hazard reports, community confirmations — filtered to nearby (50km) if location granted.
+- **Sort by distance / rating** — sort chip row under filter chips on Explore. "Nearest" triggers a location request and sorts client-side; "Top rated" sorts by rating_avg.
 
 ## Data model (Mongo)
 User, Walk (with `segments[]` incl. per-segment freedom), PointOfInterest, Hazard (with `confirmations`, `last_confirmed_at`, `expires_at` field ready for auto-expiry), Rating, Comment, WalkConfirmation.

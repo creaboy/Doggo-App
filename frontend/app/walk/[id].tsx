@@ -1,8 +1,9 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, TextInput, KeyboardAvoidingView, Platform, Modal } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, TextInput, KeyboardAvoidingView, Platform, Modal, Share } from "react-native";
+import * as Clipboard from "expo-clipboard";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { CaretLeft, Star, Clock, TrendUp, MapPin, Warning, CheckCircle, Drop, Car, Trash, Eye, Heart } from "phosphor-react-native";
+import { CaretLeft, Star, Clock, TrendUp, MapPin, Warning, CheckCircle, Drop, Car, Trash, Eye, Heart, ShareNetwork } from "phosphor-react-native";
 import { colors, radius, spacing } from "../../src/theme";
 import { DoggoMap, SegmentInput } from "../../src/DoggoMap";
 import { api } from "../../src/api";
@@ -23,6 +24,12 @@ export default function WalkDetail() {
   const [posting, setPosting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [hazardOpen, setHazardOpen] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 2200);
+  };
 
   const load = useCallback(async () => {
     try {
@@ -99,6 +106,27 @@ export default function WalkDetail() {
     load();
   };
 
+  const shareWalk = async () => {
+    const base = (process.env.EXPO_PUBLIC_BACKEND_URL || "").replace(/\/$/, "");
+    const url = `${base}/walk/${walk.id}`;
+    const message = `Check out this dog walk on Doggo — ${walk.title} (${walk.distance_km}km · ${formatDuration(walk.duration_min)})\n${url}`;
+    try {
+      if (Platform.OS === "web") {
+        // Try native share first, fallback to clipboard
+        // @ts-ignore
+        if (typeof navigator !== "undefined" && navigator.share) {
+          // @ts-ignore
+          await navigator.share({ title: walk.title, text: message, url });
+          return;
+        }
+        await Clipboard.setStringAsync(url);
+        showToast("Link copied to clipboard");
+      } else {
+        await Share.share({ message, url, title: walk.title });
+      }
+    } catch {}
+  };
+
   return (
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1, backgroundColor: colors.surface }}>
       <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + spacing.xxl }}>
@@ -107,13 +135,16 @@ export default function WalkDetail() {
             <CaretLeft size={22} color={colors.onSurface} />
           </Pressable>
           <Text style={styles.headerTitle} numberOfLines={1}>{walk.title}</Text>
-          {user ? (
-            <Pressable testID="fav-detail" style={styles.backBtn} onPress={() => toggle(walk.id)}>
-              <Heart size={22} color={isFavorite(walk.id) ? colors.error : colors.onSurface} weight={isFavorite(walk.id) ? "fill" : "regular"} />
+          <View style={styles.headerRight}>
+            <Pressable testID="share-btn" style={styles.backBtn} onPress={shareWalk}>
+              <ShareNetwork size={20} color={colors.onSurface} />
             </Pressable>
-          ) : (
-            <View style={{ width: 40 }} />
-          )}
+            {user ? (
+              <Pressable testID="fav-detail" style={styles.backBtn} onPress={() => toggle(walk.id)}>
+                <Heart size={22} color={isFavorite(walk.id) ? colors.error : colors.onSurface} weight={isFavorite(walk.id) ? "fill" : "regular"} />
+              </Pressable>
+            ) : null}
+          </View>
         </View>
 
         <View style={styles.topCard}>
@@ -224,6 +255,11 @@ export default function WalkDetail() {
 
       <ConfirmModal open={confirmOpen} onClose={() => setConfirmOpen(false)} onAccurate={confirmAccurate} onChange={reportChange} />
       <AddHazardModal open={hazardOpen} onClose={() => setHazardOpen(false)} walkId={walk.id} centerLat={walk.start_lat} centerLng={walk.start_lng} onDone={load} />
+      {toast && (
+        <View pointerEvents="none" style={[styles.toast, { bottom: insets.bottom + spacing.xl }]} testID="share-toast">
+          <Text style={styles.toastText}>{toast}</Text>
+        </View>
+      )}
     </KeyboardAvoidingView>
   );
 }
@@ -340,9 +376,12 @@ function AddHazardModal({ open, onClose, walkId, centerLat, centerLng, onDone }:
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: spacing.lg, backgroundColor: colors.surface },
   err: { color: colors.error },
-  headerBar: { flexDirection: "row", alignItems: "center", paddingHorizontal: spacing.md, paddingBottom: spacing.sm, backgroundColor: colors.surfaceSecondary, borderBottomWidth: 1, borderBottomColor: colors.border },
+  headerBar: { flexDirection: "row", alignItems: "center", paddingHorizontal: spacing.md, paddingBottom: spacing.sm, backgroundColor: colors.surfaceSecondary, borderBottomWidth: 1, borderBottomColor: colors.border, gap: 4 },
+  headerRight: { flexDirection: "row", gap: 4 },
   backBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surfaceTertiary, alignItems: "center", justifyContent: "center" },
   headerTitle: { flex: 1, textAlign: "center", fontSize: 16, fontWeight: "700", color: colors.onSurface },
+  toast: { position: "absolute", left: spacing.lg, right: spacing.lg, backgroundColor: colors.surfaceInverse, borderRadius: radius.md, paddingVertical: 12, paddingHorizontal: spacing.md, alignItems: "center" },
+  toastText: { color: colors.onSurfaceInverse, fontSize: 13, fontWeight: "600" },
   topCard: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg, gap: spacing.sm },
   walkTitle: { fontSize: 24, fontWeight: "700", color: colors.onSurface },
   metaRow: { flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" },

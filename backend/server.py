@@ -587,6 +587,71 @@ async def favorites_hazards(user=Depends(current_user)):
     return hazards
 
 
+# ============ Weekly digest ============
+
+def _haversine_km(lat1, lng1, lat2, lng2):
+    from math import radians, sin, cos, sqrt, atan2
+    r = 6371
+    dlat = radians(lat2 - lat1)
+    dlon = radians(lng2 - lng1)
+    a = sin(dlat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2) ** 2
+    return r * 2 * atan2(sqrt(a), sqrt(1 - a))
+
+
+@api_router.get("/digest")
+async def weekly_digest(lat: Optional[float] = None, lng: Optional[float] = None, radius_km: float = 50.0):
+    since = datetime.now(timezone.utc) - timedelta(days=7)
+    # New walks this week
+    new_walks = await db.walks.find({"created_at": {"$gte": since}}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    if lat is not None and lng is not None:
+        new_walks = [w for w in new_walks if _haversine_km(lat, lng, w["start_lat"], w["start_lng"]) <= radius_km]
+        for w in new_walks:
+            w["distance_from_you_km"] = round(_haversine_km(lat, lng, w["start_lat"], w["start_lng"]), 1)
+    new_walks = new_walks[:20]
+
+    # Recent hazard reports & confirmations this week
+    recent_hazards = await db.hazards.find(
+        {"$or": [{"created_at": {"$gte": since}}, {"last_confirmed_at": {"$gte": since}}]},
+        {"_id": 0},
+    ).sort("last_confirmed_at", -1).to_list(200)
+    walk_ids = list({h["walk_id"] for h in recent_hazards})
+    walks = await db.walks.find({"id": {"$in": walk_ids}}, {"_id": 0, "id": 1, "title": 1, "start_lat": 1, "start_lng": 1}).to_list(500)
+    title_by = {w["id"]: w for w in walks}
+    for h in recent_hazards:
+        w = title_by.get(h["walk_id"], {})
+        h["walk_title"] = w.get("title", "")
+        if lat is not None and lng is not None and w:
+            h["distance_from_you_km"] = round(_haversine_km(lat, lng, w["start_lat"], w["start_lng"]), 1)
+    if lat is not None and lng is not None:
+        recent_hazards = [h for h in recent_hazards if h.get("distance_from_you_km", 0) <= radius_km]
+    recent_hazards = recent_hazards[:30]
+
+    # Walk confirmations this week — count per walk
+    conf_cursor = db.walk_confirmations.aggregate([
+        {"$match": {"created_at": {"$gte": since}, "accurate": True}},
+        {"$group": {"_id": "$walk_id", "count": {"$sum": 1}, "last": {"$max": "$created_at"}}},
+        {"$sort": {"count": -1}},
+        {"$limit": 20},
+    ])
+    conf_groups = await conf_cursor.to_list(50)
+    conf_walk_ids = [c["_id"] for c in conf_groups]
+    conf_walks = await db.walks.find({"id": {"$in": conf_walk_ids}}, {"_id": 0}).to_list(50)
+    conf_by = {w["id"]: w for w in conf_walks}
+    confirmations = []
+    for c in conf_groups:
+        w = conf_by.get(c["_id"])
+        if not w:
+            continue
+        entry = {"walk_id": c["_id"], "walk_title": w["title"], "count": c["count"], "last": c["last"], "environment": w["environment"]}
+        if lat is not None and lng is not None:
+            entry["distance_from_you_km"] = round(_haversine_km(lat, lng, w["start_lat"], w["start_lng"]), 1)
+        confirmations.append(entry)
+    if lat is not None and lng is not None:
+        confirmations = [c for c in confirmations if c.get("distance_from_you_km", 0) <= radius_km]
+
+    return {"new_walks": new_walks, "hazards": recent_hazards, "confirmations": confirmations}
+
+
 @api_router.get("/")
 async def root():
     return {"message": "Doggo API"}

@@ -2,19 +2,26 @@ import React, { useEffect, useMemo, useState } from "react";
 import { View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator, RefreshControl, FlatList, Modal } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { Star, MapPin, Clock, TrendUp, X, SlidersHorizontal, List as ListIcon, MapTrifold, Heart } from "phosphor-react-native";
+import { Star, MapPin, Clock, TrendUp, X, SlidersHorizontal, List as ListIcon, MapTrifold, Heart, Sparkle } from "phosphor-react-native";
 import { colors, radius, spacing } from "../../src/theme";
 import { api } from "../../src/api";
 import { DoggoMap } from "../../src/DoggoMap";
 import { environmentLabels, difficultyLabels, freedomLabels, formatDuration, timeAgo, walkFreedomColor } from "../../src/labels";
 import { useFavorites } from "../../src/FavoritesContext";
 import { useAuth } from "../../src/AuthContext";
+import { useUserLocation, distanceKm } from "../../src/useUserLocation";
+import { DigestModal } from "../../src/DigestModal";
 
 type Walk = any;
 
 const ENV_OPTIONS = ["all", "forest", "fields", "city", "beach", "mountain", "mixed"];
 const DIFF_OPTIONS = ["all", "easy", "moderate", "sporty"];
 const FREE_OPTIONS = ["all", "free", "partial", "leash"];
+const SORT_OPTIONS: { key: "recommended" | "distance" | "rating"; label: string }[] = [
+  { key: "recommended", label: "Recommended" },
+  { key: "distance", label: "Nearest" },
+  { key: "rating", label: "Top rated" },
+];
 
 export default function ExploreScreen() {
   const router = useRouter();
@@ -25,8 +32,11 @@ export default function ExploreScreen() {
   const [err, setErr] = useState("");
   const [viewMode, setViewMode] = useState<"map" | "list">("map");
   const [filterOpen, setFilterOpen] = useState(false);
+  const [digestOpen, setDigestOpen] = useState(false);
   const [filters, setFilters] = useState({ environment: "all", difficulty: "all", dog_freedom: "all", min_rating: 0, max_duration: 0 });
   const [envFilter, setEnvFilter] = useState<string>("all");
+  const [sortKey, setSortKey] = useState<"recommended" | "distance" | "rating">("recommended");
+  const { loc: userLoc, status: locStatus } = useUserLocation(sortKey === "distance");
 
   const load = async () => {
     setErr("");
@@ -50,18 +60,32 @@ export default function ExploreScreen() {
 
   useEffect(() => { load(); }, [filters, envFilter]);
 
+  const displayWalks = useMemo(() => {
+    let list = walks.slice();
+    if (sortKey === "distance" && userLoc) {
+      list = list
+        .map((w) => ({ ...w, _dist: distanceKm(userLoc, { lat: w.start_lat, lng: w.start_lng }) }))
+        .sort((a, b) => a._dist - b._dist);
+    } else if (sortKey === "rating") {
+      list = list.sort((a, b) => (b.rating_avg || 0) - (a.rating_avg || 0));
+    } else {
+      list = list.sort((a, b) => new Date(b.last_verified_at).getTime() - new Date(a.last_verified_at).getTime());
+    }
+    return list;
+  }, [walks, sortKey, userLoc]);
+
   const region = useMemo(() => {
-    if (walks.length === 0) return { latitude: 48.85, longitude: 2.35, latitudeDelta: 4, longitudeDelta: 4 };
-    const lats = walks.map((w) => w.start_lat);
-    const lngs = walks.map((w) => w.start_lng);
+    if (displayWalks.length === 0) return { latitude: 48.85, longitude: 2.35, latitudeDelta: 4, longitudeDelta: 4 };
+    const lats = displayWalks.map((w) => w.start_lat);
+    const lngs = displayWalks.map((w) => w.start_lng);
     const lat = (Math.min(...lats) + Math.max(...lats)) / 2;
     const lng = (Math.min(...lngs) + Math.max(...lngs)) / 2;
     const latD = Math.max(0.05, (Math.max(...lats) - Math.min(...lats)) * 1.5);
     const lngD = Math.max(0.05, (Math.max(...lngs) - Math.min(...lngs)) * 1.5);
     return { latitude: lat, longitude: lng, latitudeDelta: latD, longitudeDelta: lngD };
-  }, [walks]);
+  }, [displayWalks]);
 
-  const markers = walks.map((w) => ({
+  const markers = displayWalks.map((w) => ({
     id: w.id,
     coordinate: { latitude: w.start_lat, longitude: w.start_lng },
     color: walkFreedomColor[w.dog_freedom],
@@ -76,6 +100,9 @@ export default function ExploreScreen() {
         <View style={styles.headerTop}>
           <Text style={styles.brand}>Doggo</Text>
           <View style={styles.headerActions}>
+            <Pressable testID="open-digest" style={styles.iconBtn} onPress={() => setDigestOpen(true)}>
+              <Sparkle size={20} color={colors.brandPrimary} weight="fill" />
+            </Pressable>
             <Pressable testID="toggle-view-mode" style={styles.iconBtn} onPress={() => setViewMode(viewMode === "map" ? "list" : "map")}>
               {viewMode === "map" ? <ListIcon size={20} color={colors.onSurface} /> : <MapTrifold size={20} color={colors.onSurface} />}
             </Pressable>
@@ -91,6 +118,20 @@ export default function ExploreScreen() {
               <Text style={[styles.chipText, envFilter === e && styles.chipTextActive]}>{e === "all" ? "All" : environmentLabels[e]}</Text>
             </Pressable>
           ))}
+        </ScrollView>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
+          {SORT_OPTIONS.map((s) => (
+            <Pressable key={s.key} testID={`sort-${s.key}`} onPress={() => setSortKey(s.key)}
+              style={[styles.chipSmall, sortKey === s.key && styles.chipSmallActive]}>
+              <Text style={[styles.chipSmallText, sortKey === s.key && styles.chipSmallTextActive]}>{s.label}</Text>
+            </Pressable>
+          ))}
+          {sortKey === "distance" && locStatus === "denied" && (
+            <Text style={styles.locWarn}>Location denied — enable to sort by distance</Text>
+          )}
+          {sortKey === "distance" && locStatus === "requesting" && (
+            <Text style={styles.locWarn}>Getting location…</Text>
+          )}
         </ScrollView>
       </View>
 
@@ -114,7 +155,7 @@ export default function ExploreScreen() {
             <FlatList
               horizontal
               showsHorizontalScrollIndicator={false}
-              data={walks}
+              data={displayWalks}
               keyExtractor={(w) => w.id}
               contentContainerStyle={{ paddingHorizontal: spacing.md, gap: spacing.md }}
               renderItem={({ item }) => <MiniCard walk={item} onPress={() => router.push(`/walk/${item.id}`)} />}
@@ -124,7 +165,7 @@ export default function ExploreScreen() {
         </View>
       ) : (
         <FlatList
-          data={walks}
+          data={displayWalks}
           keyExtractor={(w) => w.id}
           contentContainerStyle={{ padding: spacing.md, gap: spacing.md, paddingBottom: spacing.xxl }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}
@@ -134,6 +175,7 @@ export default function ExploreScreen() {
       )}
 
       <FilterModal open={filterOpen} onClose={() => setFilterOpen(false)} filters={filters} setFilters={setFilters} />
+      <DigestModal open={digestOpen} onClose={() => setDigestOpen(false)} userLoc={userLoc} />
     </View>
   );
 }
@@ -260,6 +302,11 @@ const styles = StyleSheet.create({
   chipActive: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
   chipText: { color: colors.muted, fontSize: 13, fontWeight: "600" },
   chipTextActive: { color: colors.onBrand },
+  chipSmall: { height: 28, paddingHorizontal: spacing.md, borderRadius: radius.pill, backgroundColor: "transparent", alignItems: "center", justifyContent: "center", flexShrink: 0, borderWidth: 1, borderColor: colors.border },
+  chipSmallActive: { backgroundColor: colors.brandTertiary, borderColor: colors.brandPrimary },
+  chipSmallText: { color: colors.muted, fontSize: 12, fontWeight: "600" },
+  chipSmallTextActive: { color: colors.brandPrimary },
+  locWarn: { alignSelf: "center", color: colors.warning, fontSize: 11, fontWeight: "600", paddingHorizontal: spacing.sm },
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: spacing.lg, gap: spacing.md },
   err: { color: colors.error, textAlign: "center" },
   mutedText: { color: colors.muted, fontSize: 14 },
