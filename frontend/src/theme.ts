@@ -22,6 +22,7 @@ export const colors = {
   error: "#B33939",
   onError: "#FFFFFF",
   info: "#566573",
+  location: "#4285F4",
   onInfo: "#FFFFFF",
   border: "#E3E8DF",
   borderStrong: "#C1C9BA",

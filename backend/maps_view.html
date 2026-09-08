@@ -3,7 +3,7 @@
 <title>Carte Doggo</title><style>html,body,#map{height:100%;width:100%;margin:0;padding:0}#status{position:absolute;top:8px;left:8px;font:14px sans-serif;background:white;padding:8px;border-radius:8px;z-index:2}#status:empty{display:none}</style></head>
 <body><div id="map" data-testid="google-map-canvas" aria-label="Carte Google Doggo"></div><div id="status" data-testid="google-map-status">Chargement de la carte…</div>
 <script>
-let map, data = {}, layers = [], regionKey = '', fitKey = '', locationMarker;
+let map, data = {}, layers = [], regionKey = '', fitKey = '', locationMarker, locationCircle, focusedLocationId;
 const statusNode = document.getElementById('status');
 function post(payload) {
   if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify(payload));
@@ -13,6 +13,28 @@ function fail() { statusNode.textContent = 'Carte Google indisponible. Vérifiez
 window.gm_authFailure = fail;
 function ll(p) { return {lat:p.latitude, lng:p.longitude}; }
 function point(p) { return p && Number.isFinite(p.latitude) && Number.isFinite(p.longitude) && Math.abs(p.latitude)<=90 && Math.abs(p.longitude)<=180; }
+function updateLocation() {
+  if (!map) return;
+  const canvas=document.getElementById('map');
+  if (point(data.userCoordinate)) {
+    const position=ll(data.userCoordinate);
+    const color=data.locationStale ? data.colors.locationStale : data.colors.location;
+    if (!locationMarker) locationMarker=new google.maps.Marker({map,zIndex:1000,clickable:false,title:'Votre position GPS'});
+    locationMarker.setIcon({path:google.maps.SymbolPath.CIRCLE,scale:8,fillColor:color,fillOpacity:1,strokeWeight:3,strokeColor:data.colors.outline});
+    locationMarker.setMap(map); locationMarker.setPosition(position);
+    if (!locationCircle) locationCircle=new google.maps.Circle({map,clickable:false,zIndex:1,strokeWeight:1,strokeOpacity:.2,fillOpacity:.09});
+    locationCircle.setOptions({map,center:position,radius:data.userAccuracy || 0,strokeColor:color,fillColor:color});
+    canvas.setAttribute('data-user-latitude', String(data.userCoordinate.latitude));
+    canvas.setAttribute('data-user-longitude', String(data.userCoordinate.longitude));
+  } else {
+    if(locationMarker) locationMarker.setMap(null);
+    if(locationCircle) locationCircle.setMap(null);
+    canvas.removeAttribute('data-user-latitude'); canvas.removeAttribute('data-user-longitude');
+  }
+  if(data.locationFocus && point(data.locationFocus.coordinate) && data.locationFocus.id!==focusedLocationId){
+    focusedLocationId=data.locationFocus.id; map.panTo(ll(data.locationFocus.coordinate)); map.setZoom(17);
+  }
+}
 function render() {
   if (!map) return;
   layers.forEach(l => l.setMap(null)); layers = [];
@@ -39,10 +61,6 @@ function render() {
       label:m.id==='start' ? {text:'D',color:data.colors.outline,fontSize:'11px',fontWeight:'700'} : undefined});
     marker.addListener('click',()=>post({type:'markerPress',id:m.id})); layers.push(marker);
   });
-  if (point(data.userCoordinate)) {
-    if (!locationMarker) locationMarker = new google.maps.Marker({map,zIndex:15,clickable:false,icon:{path:google.maps.SymbolPath.CIRCLE,scale:7,fillColor:data.colors.location,fillOpacity:1,strokeWeight:3,strokeColor:data.colors.outline}});
-    locationMarker.setPosition(ll(data.userCoordinate));
-  }
   const r=data.initialRegion;
   const nextKey=JSON.stringify(r);
   if (r && nextKey!==regionKey && !data.fitToRoute) {
@@ -56,8 +74,9 @@ function render() {
   canvas.setAttribute('data-editable', String(!!data.editable));
   canvas.setAttribute('data-selected-segment', String(data.selectedSegmentIndex ?? ''));
   canvas.setAttribute('aria-label', 'Carte Doggo · '+(data.segments || []).length+' segments');
+  updateLocation();
 }
-window.__doggoUpdate = function(payload) { if (!payload || typeof payload!=='object') return; data=payload; render(); };
+window.__doggoUpdate = function(payload) { if (!payload || typeof payload!=='object') return; const sceneChanged=data.sceneRevision!==payload.sceneRevision; data=payload; if(sceneChanged) render(); else updateLocation(); };
 window.addEventListener('message',e=>{
   if (e.source!==window.parent || e.origin!==location.origin || !e.data?.doggoMap) return;
   window.__doggoUpdate(e.data.payload);

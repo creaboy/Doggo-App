@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Pressable, StyleSheet, Platform, ActivityIndicator, Linking } from 'react-native';
 import Constants, { ExecutionEnvironment } from 'expo-constants';
 import type { MapProps } from './DoggoMap';
@@ -14,13 +14,17 @@ export function GoogleDoggoMap(props: MapProps & { fallback: React.ReactNode }) 
   const native = Platform.OS !== 'web' && Constants.executionEnvironment !== ExecutionEnvironment.StoreClient &&
     (Platform.OS === 'android' ? Constants.expoConfig?.extra?.googleNativeAndroid : Constants.expoConfig?.extra?.googleNativeIos);
   const url = `${Constants.expoConfig?.extra?.backendUrl || process.env.EXPO_PUBLIC_BACKEND_URL}/api/maps/view`;
-  const payload = useMemo(() => ({
+  const sceneRevision = useRef(0);
+  const scene = useMemo(() => ({
+    sceneRevision: ++sceneRevision.current,
     initialRegion: props.initialRegion, segments: (props.segments || []).map(({ coordinates, freedom, generated, pending }) => ({ coordinates, freedom, generated, pending })),
     markers: (props.markers || []).map(({ id, coordinate, color, label }) => ({ id, coordinate, color, label })),
-    fitToRoute: props.fitToRoute, fitRevision: props.fitRevision, userCoordinate: props.userCoordinate,
+    fitToRoute: props.fitToRoute, fitRevision: props.fitRevision,
     segmentEditable: !!props.onSegmentPress, selectedSegmentIndex: props.selectedSegmentIndex,
     editable: !!props.onPress, colors: mapColors, mapStyle: googleMapStyle,
-  }), [props.initialRegion, props.segments, props.markers, props.fitToRoute, props.fitRevision, props.userCoordinate, props.onPress, props.onSegmentPress, props.selectedSegmentIndex]);
+  }), [props.initialRegion, props.segments, props.markers, props.fitToRoute, props.fitRevision, props.onPress, props.onSegmentPress, props.selectedSegmentIndex]);
+  const payload = useMemo(() => ({ ...scene, userCoordinate: props.userCoordinate, userAccuracy: props.userAccuracy, locationStale: props.locationStale, locationFocus: props.locationFocus }),
+    [scene, props.userCoordinate, props.userAccuracy, props.locationStale, props.locationFocus]);
   useEffect(() => {
     if (native || loaded || fallback) return;
     const timeout = setTimeout(() => setFailed(true), 25000);
@@ -45,7 +49,7 @@ export function GoogleDoggoMap(props: MapProps & { fallback: React.ReactNode }) 
 }
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surfaceTertiary, overflow: 'hidden' },
-  loading: { position: 'absolute', top: 14, right: 14, padding: 8, backgroundColor: colors.surfaceSecondary, borderRadius: 16 },
+  loading: { position: 'absolute', top: 14, right: 72, padding: 8, backgroundColor: colors.surfaceSecondary, borderRadius: 16 },
   errorBox: { position: 'absolute', top: 12, left: 12, right: 12, backgroundColor: colors.surfaceSecondary, padding: spacing.md, borderRadius: 12 },
   errorText: { color: colors.error, fontSize: 13 }, button: { minHeight: 44, justifyContent: 'center' },
   buttonText: { color: colors.brandPrimary, fontWeight: '700' },

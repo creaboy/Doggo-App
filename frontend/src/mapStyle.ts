@@ -8,4 +8,4 @@ export const googleMapStyle = [
   { featureType: 'poi.park', elementType: 'geometry', stylers: [{ saturation: -50 }, { lightness: 12 }] },
   { featureType: 'poi.business', stylers: [{ visibility: 'on' }] },
 ];
-export const mapColors = { free: colors.success, caution: colors.warning, leash: colors.error, outline: colors.surfaceSecondary, location: colors.info };
+export const mapColors = { free: colors.success, caution: colors.warning, leash: colors.error, outline: colors.surfaceSecondary, location: colors.location, locationStale: colors.muted };

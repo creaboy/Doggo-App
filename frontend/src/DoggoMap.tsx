@@ -1,7 +1,9 @@
-import React, { useEffect, useRef, useMemo } from "react";
-import { View, Platform } from "react-native";
+import React, { useCallback, useEffect, useRef, useMemo, useState } from "react";
+import { View, Platform, StyleSheet, Linking } from "react-native";
 import { colors } from "./theme";
 import { GoogleDoggoMap } from "./GoogleDoggoMap";
+import { useLiveMapLocation } from "./useLiveMapLocation";
+import { MapLocationControl } from "./MapLocationControl";
 
 // Types
 export type LatLng = { latitude: number; longitude: number };
@@ -25,6 +27,9 @@ export type MapProps = {
   fitToRoute?: boolean;
   fitRevision?: number;
   userCoordinate?: LatLng | null;
+  userAccuracy?: number | null;
+  locationStale?: boolean;
+  locationFocus?: { id: number; coordinate: LatLng };
   onSegmentPress?: (index: number, coordinate?: LatLng) => void;
   selectedSegmentIndex?: number;
 };
@@ -39,8 +44,7 @@ function calcZoom(latDelta: number, lngDelta: number): number {
 // ============ Shared HTML template ============
 
 function buildHtml(
-  region: { latitude: number; longitude: number; latitudeDelta: number; longitudeDelta: number },
-  showsUserLocation: boolean
+  region: { latitude: number; longitude: number; latitudeDelta: number; longitudeDelta: number }
 ): string {
   const zoom = calcZoom(region.latitudeDelta, region.longitudeDelta);
   return `<!doctype html><html><head>
@@ -58,6 +62,9 @@ function buildHtml(
   L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png', {maxZoom:20, subdomains:'abcd', attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'}).addTo(map);
   var layers = [];
   var userMarker = null;
+  var accuracyCircle = null;
+  var focusId;
+  map.createPane('doggo-user-location').style.zIndex = '650';
 
   function post(obj){
     try {
@@ -94,17 +101,20 @@ function buildHtml(
     try { map.setView([r.latitude, r.longitude], ${zoom}); } catch(e){}
   };
 
-  ${showsUserLocation ? `
-    if (navigator.geolocation) {
-      navigator.geolocation.watchPosition(function(pos){
-        var ll = [pos.coords.latitude, pos.coords.longitude];
-        if (userMarker) { userMarker.setLatLng(ll); } else {
-          var icon = L.divIcon({html:'<div style="width:16px;height:16px;border-radius:50%;background:#4285F4;border:3px solid #fff;box-shadow:0 0 0 2px rgba(66,133,244,0.3)"></div>', iconSize:[16,16], iconAnchor:[8,8], className:''});
-          userMarker = L.marker(ll, {icon: icon}).addTo(map);
-        }
-      }, function(){}, {enableHighAccuracy:false, maximumAge:30000, timeout:15000});
+  window.__setUserLocation = function(data){
+    if(data.userCoordinate){
+      var p=[data.userCoordinate.latitude,data.userCoordinate.longitude];
+      var color=data.locationStale ? '${colors.muted}' : '${colors.location}';
+      if(!userMarker) userMarker=L.circleMarker(p,{pane:'doggo-user-location',radius:8,color:'${colors.surfaceSecondary}',weight:3,fillOpacity:1,interactive:false}).addTo(map);
+      userMarker.setLatLng(p).setStyle({fillColor:color});
+      if(!accuracyCircle) accuracyCircle=L.circle(p,{weight:1,opacity:.2,fillOpacity:.09,interactive:false}).addTo(map);
+      accuracyCircle.setLatLng(p).setRadius(data.userAccuracy || 0).setStyle({color:color,fillColor:color}).bringToBack();
+    }else{
+      if(userMarker){map.removeLayer(userMarker);userMarker=null;}
+      if(accuracyCircle){map.removeLayer(accuracyCircle);accuracyCircle=null;}
     }
-  ` : ''}
+    if(data.locationFocus && data.locationFocus.id!==focusId){focusId=data.locationFocus.id;var c=data.locationFocus.coordinate;map.setView([c.latitude,c.longitude],17);}
+  };
 
   post({type:'ready'});
 })();
@@ -120,7 +130,7 @@ const NativeMapImpl: React.FC<Props> = (props) => {
   const readyRef = useRef(false);
 
   const region = props.initialRegion || { latitude: 48.85, longitude: 2.35, latitudeDelta: 0.1, longitudeDelta: 0.1 };
-  const html = useMemo(() => buildHtml(region, !!props.showsUserLocation), [region.latitude, region.longitude, region.latitudeDelta, region.longitudeDelta, props.showsUserLocation]);
+  const html = useMemo(() => buildHtml(region), [region.latitude, region.longitude, region.latitudeDelta, region.longitudeDelta]);
 
   const pushData = () => {
     if (!ref.current || !readyRef.current) return;
@@ -129,6 +139,12 @@ const NativeMapImpl: React.FC<Props> = (props) => {
   };
 
   useEffect(() => { pushData(); }, [props.segments, props.markers, props.onSegmentPress, props.selectedSegmentIndex]);
+  const pushLocation = useCallback(() => {
+    if (!readyRef.current) return;
+    const data = JSON.stringify({ userCoordinate: props.userCoordinate, userAccuracy: props.userAccuracy, locationStale: props.locationStale, locationFocus: props.locationFocus });
+    ref.current?.injectJavaScript(`window.__setUserLocation(${data});true;`);
+  }, [props.userCoordinate, props.userAccuracy, props.locationStale, props.locationFocus]);
+  useEffect(pushLocation, [pushLocation]);
 
   const onMessage = (e: any) => {
     let msg: any = null;
@@ -136,6 +152,7 @@ const NativeMapImpl: React.FC<Props> = (props) => {
     if (msg.type === "ready") {
       readyRef.current = true;
       pushData();
+      pushLocation();
     } else if (msg.type === "press" && props.onPress) {
       props.onPress({ latitude: msg.lat, longitude: msg.lng });
     } else if (msg.type === "segmentPress") {
@@ -215,6 +232,30 @@ const WebMapImpl: React.FC<Props> = (props) => {
   const readyRef = useRef(false);
   const latestProps = useRef(props);
   latestProps.current = props;
+  const positionRef = useRef<any>(null);
+  const accuracyRef = useRef<any>(null);
+  const focusRef = useRef<number | undefined>(undefined);
+  const renderLocation = useCallback(() => {
+    const L = (window as any).L, map = mapRef.current, data = latestProps.current;
+    if (!L || !map) return;
+    if (data.userCoordinate) {
+      const p = [data.userCoordinate.latitude, data.userCoordinate.longitude];
+      const color = data.locationStale ? colors.muted : colors.location;
+      if (!positionRef.current) positionRef.current = L.circleMarker(p, { pane: 'doggo-user-location', radius: 8, color: colors.surfaceSecondary, weight: 3, fillOpacity: 1, interactive: false }).addTo(map);
+      positionRef.current.setLatLng(p).setStyle({ fillColor: color });
+      positionRef.current.getElement()?.setAttribute('data-testid', `${data.testID}-user-position`);
+      if (!accuracyRef.current) accuracyRef.current = L.circle(p, { weight: 1, opacity: .2, fillOpacity: .09, interactive: false }).addTo(map);
+      accuracyRef.current.setLatLng(p).setRadius(data.userAccuracy || 0).setStyle({ color, fillColor: color }).bringToBack();
+    } else {
+      if (positionRef.current) { map.removeLayer(positionRef.current); positionRef.current = null; }
+      if (accuracyRef.current) { map.removeLayer(accuracyRef.current); accuracyRef.current = null; }
+    }
+    if (data.locationFocus && data.locationFocus.id !== focusRef.current) {
+      focusRef.current = data.locationFocus.id;
+      const p = data.locationFocus.coordinate; map.setView([p.latitude, p.longitude], 17);
+    }
+  }, []);
+  useEffect(renderLocation, [renderLocation, props.userCoordinate, props.userAccuracy, props.locationStale, props.locationFocus]);
 
   useEffect(() => {
     let cancelled = false;
@@ -230,8 +271,10 @@ const WebMapImpl: React.FC<Props> = (props) => {
       }).addTo(map);
       map.on("click", (e: any) => { latestProps.current.onPress?.({ latitude: e.latlng.lat, longitude: e.latlng.lng }); });
       mapRef.current = map;
+      map.createPane('doggo-user-location').style.zIndex = '650';
       readyRef.current = true;
       renderLayers();
+      renderLocation();
       setTimeout(() => { try { map.invalidateSize(); } catch {} }, 100);
     }).catch(() => {});
     return () => {
@@ -295,4 +338,29 @@ const LeafletMap: React.FC<Props> = (props) => {
   return <NativeMapImpl {...props} />;
 };
 
-export const DoggoMap: React.FC<Props> = (props) => <GoogleDoggoMap {...props} fallback={<LeafletMap {...props} />} />;
+export const DoggoMap: React.FC<Props> = (props) => {
+  const gps = useLiveMapLocation();
+  const [focus, setFocus] = useState<MapProps['locationFocus']>();
+  const pendingFocus = useRef(false);
+  useEffect(() => {
+    if (pendingFocus.current && gps.coordinate && gps.status === 'live') {
+      pendingFocus.current = false;
+      setFocus(previous => ({ id: (previous?.id || 0) + 1, coordinate: gps.coordinate! }));
+    }
+  }, [gps.coordinate, gps.status]);
+  const locate = () => {
+    if (gps.coordinate) setFocus(previous => ({ id: (previous?.id || 0) + 1, coordinate: gps.coordinate! }));
+    if (gps.status !== 'live') {
+      pendingFocus.current = true;
+      if (gps.status === 'denied' && Platform.OS !== 'web') void Linking.openSettings().catch(() => {});
+      else gps.retry();
+    }
+  };
+  const mapProps = { ...props, style: mapStyles.fill, showsUserLocation: true, userCoordinate: gps.coordinate,
+    userAccuracy: gps.accuracy, locationStale: gps.status !== 'live', locationFocus: focus };
+  return <View style={[mapStyles.root, props.style]}>
+    <GoogleDoggoMap {...mapProps} fallback={<LeafletMap {...mapProps} />} />
+    <MapLocationControl prefix={props.testID || 'doggo-map'} status={gps.status} onPress={locate} />
+  </View>;
+};
+const mapStyles = StyleSheet.create({ root: { flex: 1, overflow: 'hidden' }, fill: { flex: 1 } });
