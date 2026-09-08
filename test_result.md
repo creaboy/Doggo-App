@@ -101,3 +101,59 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
+
+user_problem_statement: "Focused existing Doggo iteration: closed loops, explicit GPS Stop (20m threshold), pedestrian return, preview, preserved freedom segments and Google map context. No redesign or data migration."
+backend:
+  - task: "Validate new closed walk submissions and use dedicated FOSSGIS pedestrian OSRM"
+    implemented: true
+    working: true
+    file: "backend/server.py, backend/route_geometry.py, backend/walking_routing.py"
+    priority: high
+    needs_retesting: false
+    status_history:
+      - agent: testing
+        working: true
+        comment: "Première phase interrompue après tests serveur : 34 passed, 0 failed. Fixtures actualisées pour boucle obligatoire et points réellement routables. Résultats pytest dans test_reports/pytest/pytest_results.xml. Aucun fichier applicatif modifié par les tests."
+      - agent: main
+        working: NA
+        comment: "Existing API preserved. /walks validates coordinates, continuity, nonstationary route and exact loop before DB mutation. /routing/snap now true foot instance, global 1req/sec, waypoint batches, <=20m endpoint connectors, no car/straight fallback. Old seed and data untouched. curl confirms live API; old test fixture has an endpoint >20m from foot network and now correctly fails closed."
+frontend:
+  - task: "Manual and foreground GPS loops with mandatory preview"
+    implemented: true
+    working: true
+    file: "frontend/app/(tabs)/create.tsx, frontend/src/useWalkCreation.ts, routeDraft.ts, routeCompletion.ts, useRouteRecorder.ts, create/*"
+    priority: high
+    needs_retesting: false
+    status_history:
+      - agent: main
+        working: NA
+        comment: "Undo snapshots, no snapping dense GPS, freedom per captured segment, explicit Stop only; <=20m short caution connector; >20m pause dialog Complete/Continue/Cancel. Completion failure preserves draft. Preview only publish button, dashed generated return, editable per-segment freedom, totals final geometry."
+  - task: "Google map context and existing screen regressions"
+    implemented: true
+    working: true
+    file: "frontend/src/GoogleDoggoMap.tsx, HostedMap*, NativeGoogleMap*, backend/maps_view.html"
+    priority: high
+    needs_retesting: false
+    status_history:
+      - agent: main
+        working: true
+        comment: "Google JS hosted same-origin iframe/WebView for web/Expo Go, native Google configured for own binary. Neutral styles retain business POIs. Fixed postMessage function serialization identified by RCA; screenshot verified live Google Explorer and creation screen. No physical native test yet."
+metadata:
+  created_by: main_agent
+  version: "2.0"
+  test_sequence: 6
+  next_test_sequence: 7
+test_plan:
+  current_focus: ["IMMEDIATE manual segment snapping", "GPS matching EVERY20seconds pending windows only", "click segment/edit freedom/split/undo in create and preview", "in-flight matching preserves suffix and rawGPS", "manual close/undo/reset/preview/publish", "GPS raw Stop5/19/20/20.1/21/500m", "no route/match requests after publish", "large geometry, continuity and weighted stats", "existing regression smoke"]
+  test_priority: high_first
+agent_communication:
+  - agent: main
+    message: "Validation finale : test_reports/final_validation.json consolide les vérificationsdirectes navigateur et8testsbackend+15testspurs. iteration8aucunéchec, sourcesappinchangées par agenttest. GPSsimuléuniquementnavigateur, APIs réelles ; essai physiquesmartphoneresteP1. Tous findingsiteration6/7 expliqués/corrigés etrevérifiés. Ne pas confondrecomposantsGoogle natifsconfigurés etphysiquementtestés."
+  - agent: main
+    message: "Vérifications directes terminées après iteration7 : /root/.emergent/automation_output/20260908_160657 : 2 snaps manuels immédiats HTTP200, split/undo création, split/édition aperçu, boucle exacte continue4segments, publication200 sans routage ultérieur ; largeur réelle html/body/root320 (fausse alerte due descendants carrousel hors viewport). 160914 : GPS contrôlé uniquement dans navigateur avec vraies API ; premier MATCH émis à20.07s, pointsbruts préservés, annulerfin46m reprend, Stop~19m termine via dernièrefenêtre MATCH, splitGPS et liberté Enlaisse, publication200 puis zéro requête match/snap pendant21s. 422 testsantérieurs = clics horsréseau (RCA). Erreurs maintenant visiblesdansheader et portions enattente pointilléesorange. Env EXPO_PUBLIC_BACKEND_URL conforme, ne pas changer. Restent tests unitaires déterministes limites/splitsgrandetrace/fenêtresinflight, pas une nouvelle campagnebrowser complète."
+  - agent: main
+    message: "NEW USER REQUEST: manual every segment immediate snap, GPS interval explicitly20seconds, clickable individual freedom and GPS splitting tool. Implemented using real /api/routing/match (same dedicated foot OSRM, runtime probe successful). routeDraft extended optional IDs/gpsSamples/rawGps; gpsDraft and useGpsSnapping preserve raw and append new data during matches. Google/native/Leaflet segment click events supported, splitLeg projects onto edge preserving geometry. Map manual snapHTTP200 and click->En laisse verified by screenshot. iteration6 threshold display now precise near20m; numerical threshold uses1micrometre tolerance only. Troubleshoot confirmed preview timeout was tests FORCE clicking disabled control while work running; tests must wait route-busy hidden and enabled buttons. Must finish all new tests and explicit no requests after publish check."
+  - agent: main
+    message: "Reprise après interruption demandée : NE PAS répéter les 34 tests backend réussis. Terminer tests frontend manuels + GPS contrôlé + régressions, produire rapport iteration_6.json. Les anciens logs HostedMap correspondent au bug de sérialisation déjà corrigé et vérifié par capture. Comptes créés lors des tests API maintenant documentés dans memory/test_credentials.md."
+  - agent: main
+    message: "Use demo credentials in memory/test_credentials.md. No auth implementation changed, do not create new accounts unless saving credentials. External URL is frontend/.env. Maps testing needs iframe selectors, markers serialized without callbacks. Browser geolocation can be controlled to exercise the SAME expo-location flow (web guard removed). Fault injection only in tests, never add production mock controls. Old open-route success fixture must become a closed loop; retain separate open rejection test. Respect FOSSGIS rate 1/sec and don't submit dense geometry as waypoints."

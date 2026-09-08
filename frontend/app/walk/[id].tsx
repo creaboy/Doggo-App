@@ -7,6 +7,7 @@ import { CaretLeft, Star, Clock, TrendUp, MapPin, Warning, CheckCircle, Drop, Ca
 import { colors, radius, spacing } from "../../src/theme";
 import { DoggoMap, SegmentInput } from "../../src/DoggoMap";
 import { api } from "../../src/api";
+import { regionFor } from "../../src/routeDraft";
 import { useAuth } from "../../src/AuthContext";
 import { useFavorites } from "../../src/FavoritesContext";
 import { environmentLabels, difficultyLabels, freedomLabels, formatDuration, timeAgo, poiTypeLabels, hazardTypeLabels, walkFreedomColor } from "../../src/labels";
@@ -51,16 +52,11 @@ export default function WalkDetail() {
     coordinates: s.coordinates.map((c: number[]) => ({ latitude: c[0], longitude: c[1] })),
   }));
 
-  const allLats = segments.flatMap((s) => s.coordinates.map((c) => c.latitude));
-  const allLngs = segments.flatMap((s) => s.coordinates.map((c) => c.longitude));
-  const region = {
-    latitude: (Math.min(...allLats) + Math.max(...allLats)) / 2,
-    longitude: (Math.min(...allLngs) + Math.max(...allLngs)) / 2,
-    latitudeDelta: Math.max(0.005, (Math.max(...allLats) - Math.min(...allLats)) * 1.6),
-    longitudeDelta: Math.max(0.005, (Math.max(...allLngs) - Math.min(...allLngs)) * 1.6),
-  };
+  const region = regionFor({ start: segments[0]?.coordinates[0] || null,
+    legs: segments.map(s => ({ ...s, source: "gps" as const })) });
 
   const markers = [
+    { id: "start", coordinate: { latitude: walk.start_lat, longitude: walk.start_lng }, color: colors.brandPrimary, label: "Départ de la balade" },
     ...pois.map((p: any) => ({ id: p.id, coordinate: { latitude: p.lat, longitude: p.lng }, color: colors.brandSecondary, label: poiTypeLabels[p.type] })),
     ...hazards.map((h: any) => ({ id: h.id, coordinate: { latitude: h.lat, longitude: h.lng }, color: colors.error, label: hazardTypeLabels[h.type] })),
   ];
@@ -166,7 +162,7 @@ export default function WalkDetail() {
         </View>
 
         <View style={styles.mapWrap}>
-          <DoggoMap testID="walk-detail-map" initialRegion={region} segments={segments} markers={markers} style={{ flex: 1 }} />
+          <DoggoMap testID="walk-detail-map" initialRegion={region} segments={segments} markers={markers} fitToRoute style={{ flex: 1 }} />
         </View>
 
         <LegendRow />

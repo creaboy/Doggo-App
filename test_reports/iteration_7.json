@@ -1,0 +1,81 @@
+{
+  "summary": "Backend focused match/geometry regression tests passed (8/8) on public API URL. Frontend mobile web checks validated login/create access, partial manual snap behavior, and tab regressions, but key map-interaction flows (split, deterministic preview/publish assertions) remained inconclusive in automation.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Create map manual segment snapping",
+        "issue": "In controlled manual tap run, first->second tap triggered one /api/routing/snap call, but third tap did not produce a second snap request within wait window (segment count remained 2).",
+        "testID": "create-map-frame",
+        "priority": "HIGH"
+      },
+      {
+        "component": "Create flow error feedback",
+        "issue": "Browser console captured /api/routing/snap HTTP 422 during one run without a visible in-screen error alert captured in that state.",
+        "testID": "create-error",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Create->split/edit->preview->publish full path",
+        "issue": "Could not complete deterministic end-to-end validation for map-click split and publish no-post-routing assertion due unstable map interaction timing in browser automation; requires manual verification on same build.",
+        "affected_testIDs": [
+          "create-segment-split",
+          "route-busy",
+          "preview-route",
+          "publish-walk"
+        ]
+      }
+    ],
+    "design_issues": [
+      {
+        "screen": "Explore (320 width)",
+        "issues": [
+          "DOM overflow probe reported large horizontal overflow (> viewport width), needs manual confirmation against map/tile container behavior."
+        ]
+      }
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_routing_match_geometry.py",
+    "/app/test_reports/pytest/pytest_results_iter7_backend.xml",
+    "/app/test_reports/artifacts_iter7_load/frontend_loaded.jpeg",
+    "/app/test_reports/artifacts_iter7_postlogin_scan/postlogin.jpeg",
+    "/app/test_reports/artifacts_iter7_frontend_main/main_flow_error.jpeg",
+    "/app/test_reports/artifacts_iter7_frontend_main_retry/retry_error.jpeg",
+    "/app/test_reports/artifacts_iter7_manual_snap_attempt3/manual_snap.jpeg",
+    "/app/test_reports/artifacts_iter7_regression_retry/profile_390.jpeg",
+    "/app/test_reports/artifacts_iter7_regression_retry/explore_390.jpeg",
+    "/app/test_reports/artifacts_iter7_regression_retry/explore_320.jpeg"
+  ],
+  "action_items": [
+    "Re-verify immediate manual snap per segment with strict wait for route-busy completion before each new tap; ensure second and third segment always issue /api/routing/snap.",
+    "Validate split-by-map-click flow in create and preview (including near-end rejection and undo restore) with manual QA and/or improved deterministic map hit scripting.",
+    "Re-run publish trace check and assert zero /api/routing/snap and /api/routing/match after successful publish navigation.",
+    "Confirm whether 320-width overflow signal is real UI overflow or map tile rendering artifact; fix if real."
+  ],
+  "critical_code_review_comments": [
+    "useGpsSnapping.ts correctly enforces 20000ms timer and serial in-flight flush guard; backend match contract aligns with this behavior.",
+    "walking_routing.match_points() correctly fail-closes for invalid schema, confidence<0.5, endpoint drift>20m, and >100 samples.",
+    "Google map layer still logs deprecation warnings for google.maps.Marker; not blocking now but migration to AdvancedMarkerElement should be planned.",
+    "GoogleDoggoMap.tsx reads EXPO_PUBLIC_BACKEND_URL fallback instead of EXPO_BACKEND_URL naming from testing guidelines; align env naming to avoid config drift."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_routing_match_geometry.py",
+    "/app/test_reports/iteration_7.json"
+  ],
+  "success_rate": {
+    "backend": "100% (8/8 focused tests)",
+    "frontend": "55% (core access/regression ok; key create-map interaction assertions partially inconclusive)"
+  },
+  "seed_data_creation": "No intentional seed creation. UI runs may have left temporary draft state only.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Browser-only validation performed. Physical native GPS behavior NOT tested. Stopped repeated map-selector retries after multiple attempts per loop-prevention rule; next pass should prefer manual assisted verification for map polyline split and deterministic busy-state waits.",
+  "rca_of_issue": "Most frontend inconclusive points stem from asynchronous map interactions and timing around busy states in web automation. One run showed /api/routing/snap 422 in console; likely point/network eligibility rejection, but visible UI error feedback was not captured in that moment."
+}

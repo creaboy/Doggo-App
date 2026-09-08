@@ -1,10 +1,13 @@
-"""Doggo backend API tests"""
+"""Doggo backend API tests."""
 import os
 import uuid
 import pytest
 import requests
 
-BASE = os.environ.get("EXPO_PUBLIC_BACKEND_URL", "https://barkroute.preview.emergentagent.com").rstrip("/")
+BASE = os.environ.get("EXPO_PUBLIC_BACKEND_URL")
+if not BASE:
+    pytest.skip("EXPO_PUBLIC_BACKEND_URL is required for API tests", allow_module_level=True)
+BASE = BASE.rstrip("/")
 API = f"{BASE}/api"
 
 DEMO_EMAIL = "demo@doggo.app"
@@ -28,6 +31,21 @@ def auth_token(session):
 @pytest.fixture(scope="session")
 def auth_headers(auth_token):
     return {"Authorization": f"Bearer {auth_token}"}
+
+
+@pytest.fixture(scope="session")
+def seeded_loop_coords(session):
+    """Reference loop geometry from seeded demo walks for real-world snap tests."""
+    walks = session.get(f"{API}/walks")
+    assert walks.status_code == 200
+    items = walks.json()
+    assert items, "Expected seeded walks"
+    detail = session.get(f"{API}/walks/{items[0]['id']}")
+    assert detail.status_code == 200
+    segments = detail.json()["walk"]["segments"]
+    coords = segments[0]["coordinates"]
+    assert len(coords) >= 4
+    return coords
 
 
 # --- Auth ---
@@ -128,6 +146,7 @@ class TestWalkDetail:
 # --- Create walk (auth) ---
 class TestCreateWalk:
     def test_create_walk_auto_distance(self, session, auth_headers):
+        """Walk creation requires exact closed loops and persists computed stats."""
         payload = {
             "title": "TEST_Walk_" + uuid.uuid4().hex[:6],
             "description": "test",
@@ -135,7 +154,11 @@ class TestCreateWalk:
             "environment": "forest",
             "dog_freedom": "free",
             "duration_min": 30,
-            "segments": [{"freedom": "free", "coordinates": [[48.40, 2.70], [48.41, 2.71], [48.42, 2.72]]}],
+            "segments": [
+                {"freedom": "free", "coordinates": [[48.4053, 2.7010], [48.4062, 2.7025], [48.4075, 2.7040]]},
+                {"freedom": "caution", "coordinates": [[48.4075, 2.7040], [48.4064, 2.7056], [48.4051, 2.7040]]},
+                {"freedom": "leash", "coordinates": [[48.4051, 2.7040], [48.4053, 2.7010]]},
+            ],
             "features": ["shade"],
             "pois": [{"type": "water", "lat": 48.41, "lng": 2.71, "description": "spring"}],
             "hazards": [{"type": "caterpillars", "lat": 48.42, "lng": 2.72, "description": "warning"}],
@@ -144,12 +167,89 @@ class TestCreateWalk:
         assert r.status_code == 200, r.text
         w = r.json()
         assert w["distance_km"] > 0
-        assert w["off_leash_pct"] == 100
+        assert 0 < w["off_leash_pct"] < 100
         # verify persisted
         got = session.get(f"{API}/walks/{w['id']}").json()
         assert got["walk"]["title"] == payload["title"]
         assert len(got["pois"]) == 1
         assert len(got["hazards"]) == 1
+
+    def test_create_walk_rejects_open_loop_and_preserves_existing(self, session, auth_headers):
+        """Open loops are rejected and existing walk records stay unchanged."""
+        before = session.get(f"{API}/walks")
+        assert before.status_code == 200
+        before_count = len(before.json())
+
+        payload = {
+            "title": "TEST_OpenLoop_" + uuid.uuid4().hex[:6],
+            "description": "should fail",
+            "difficulty": "easy",
+            "environment": "forest",
+            "dog_freedom": "free",
+            "duration_min": 20,
+            "segments": [{"freedom": "free", "coordinates": [[48.4053, 2.7010], [48.4062, 2.7025], [48.4075, 2.7040]]}],
+            "features": [],
+            "pois": [],
+            "hazards": [],
+        }
+        failed = session.post(f"{API}/walks", json=payload, headers=auth_headers)
+        assert failed.status_code == 422
+
+        after = session.get(f"{API}/walks")
+        assert after.status_code == 200
+        assert len(after.json()) == before_count
+
+    def test_create_walk_rejects_invalid_coordinates_and_discontinuity(self, session, auth_headers):
+        """Walk creation rejects invalid ranges/NaN-like inputs and discontinuous segments."""
+        bad_range_payload = {
+            "title": "TEST_BadRange_" + uuid.uuid4().hex[:6],
+            "description": "invalid lat",
+            "difficulty": "easy",
+            "environment": "forest",
+            "dog_freedom": "free",
+            "duration_min": 20,
+            "segments": [{"freedom": "free", "coordinates": [[95.0, 2.7010], [48.4062, 2.7025], [95.0, 2.7010]]}],
+            "features": [],
+            "pois": [],
+            "hazards": [],
+        }
+        bad_range = session.post(f"{API}/walks", json=bad_range_payload, headers=auth_headers)
+        assert bad_range.status_code == 422
+
+        discontinuous_payload = {
+            "title": "TEST_Gap_" + uuid.uuid4().hex[:6],
+            "description": "discontinuous",
+            "difficulty": "easy",
+            "environment": "forest",
+            "dog_freedom": "free",
+            "duration_min": 20,
+            "segments": [
+                {"freedom": "free", "coordinates": [[48.4053, 2.7010], [48.4062, 2.7025]]},
+                {"freedom": "caution", "coordinates": [[48.4068, 2.7032], [48.4053, 2.7010]]},
+            ],
+            "features": [],
+            "pois": [],
+            "hazards": [],
+        }
+        discontinuous = session.post(f"{API}/walks", json=discontinuous_payload, headers=auth_headers)
+        assert discontinuous.status_code == 422
+
+    def test_create_walk_rejects_zero_movement(self, session, auth_headers):
+        """Walk creation rejects stationary zero-movement loops."""
+        payload = {
+            "title": "TEST_Stationary_" + uuid.uuid4().hex[:6],
+            "description": "stationary",
+            "difficulty": "easy",
+            "environment": "forest",
+            "dog_freedom": "free",
+            "duration_min": 10,
+            "segments": [{"freedom": "free", "coordinates": [[48.4053, 2.7010], [48.4053, 2.7010], [48.4053, 2.7010]]}],
+            "features": [],
+            "pois": [],
+            "hazards": [],
+        }
+        r = session.post(f"{API}/walks", json=payload, headers=auth_headers)
+        assert r.status_code == 422
 
     def test_create_walk_requires_auth(self, session):
         r = session.post(f"{API}/walks", json={"title": "x", "duration_min": 10, "segments": [{"coordinates": [[0, 0], [1, 1]]}]})
@@ -223,23 +323,63 @@ class TestProfile:
 
 # --- Route snapping (OSRM) ---
 class TestRoutingSnap:
-    def test_snap_two_points(self, session):
-        r = session.post(f"{API}/routing/snap", json={"points": [[48.8215, 2.3355], [48.8237, 2.3410]], "profile": "foot"})
+    """Routing tests for foot-only quality constraints, batching and failures."""
+
+    def test_snap_two_points(self, session, seeded_loop_coords):
+        first = seeded_loop_coords[0]
+        second = seeded_loop_coords[min(10, len(seeded_loop_coords) - 1)]
+        r = session.post(f"{API}/routing/snap", json={"points": [first, second], "profile": "foot"})
         # OSRM public endpoint may be flaky; retry once on 5xx
         if r.status_code in (502, 503, 504):
             import time as _t; _t.sleep(2)
-            r = session.post(f"{API}/routing/snap", json={"points": [[48.8215, 2.3355], [48.8237, 2.3410]], "profile": "foot"})
+            r = session.post(f"{API}/routing/snap", json={"points": [first, second], "profile": "foot"})
         assert r.status_code == 200, f"OSRM snap failed: {r.status_code} {r.text}"
         data = r.json()
         assert "coordinates" in data
         assert isinstance(data["coordinates"], list)
-        assert len(data["coordinates"]) > 10, f"expected >10 snapped coords, got {len(data['coordinates'])}"
+        assert data.get("provider") == "fossgis_osrm"
+        assert data.get("profile") == "foot"
+        assert len(data["coordinates"]) >= 2
+        assert data["coordinates"][0] == first
+        assert data["coordinates"][-1] == second
         assert "distance_km" in data
         assert data["distance_km"] > 0
 
     def test_snap_needs_two_points(self, session):
         r = session.post(f"{API}/routing/snap", json={"points": [[48.8215, 2.3355]], "profile": "foot"})
         assert r.status_code == 400
+
+    def test_snap_rejects_far_from_network_without_car_fallback(self, session):
+        r = session.post(
+            f"{API}/routing/snap",
+            json={"points": [[48.8215, 2.3355], [48.8237, 2.3410]], "profile": "foot"},
+        )
+        assert r.status_code == 422
+        assert "20 m" in r.text
+
+    def test_snap_rejects_more_than_200_points(self, session, seeded_loop_coords):
+        points = [seeded_loop_coords[i % len(seeded_loop_coords)] for i in range(201)]
+        r = session.post(f"{API}/routing/snap", json={"points": points, "profile": "foot"})
+        assert r.status_code == 422
+
+    def test_snap_batches_and_dedupes_seams(self, session, seeded_loop_coords):
+        if len(seeded_loop_coords) < 30:
+            pytest.skip("Seeded geometry too small for batching test")
+        step = max(1, len(seeded_loop_coords) // 30)
+        points = seeded_loop_coords[::step][:30]
+        if len(points) < 26:
+            points = seeded_loop_coords[:26]
+        r = session.post(f"{API}/routing/snap", json={"points": points, "profile": "foot"})
+        if r.status_code in (502, 503, 504):
+            import time as _t
+            _t.sleep(2)
+            r = session.post(f"{API}/routing/snap", json={"points": points, "profile": "foot"})
+        assert r.status_code == 200, r.text
+        snapped = r.json()["coordinates"]
+        assert snapped[0] == points[0]
+        assert snapped[-1] == points[-1]
+        duplicates = sum(1 for a, b in zip(snapped, snapped[1:]) if a == b)
+        assert duplicates == 0
 
 
 # --- Seed v2: OSRM-snapped seeded walks ---

@@ -1,0 +1,28 @@
+{
+  "type": "main_agent_consolidated_validation",
+  "user_interval_seconds": 20,
+  "manual_flow": {
+    "status": "passed",
+    "log": "/root/.emergent/automation_output/20260908_160657/console_20260908_160657.log",
+    "verified": ["2 successive immediate real pedestrian snaps HTTP200", "map-click split and undo", "preview split and independent freedom", "exact closure and segment continuity", "persisted four-segment walk", "no snap/match after publication", "320px html/body/root without horizontal overflow"]
+  },
+  "gps_flow": {
+    "status": "passed_in_browser_with_controlled_geolocation",
+    "log": "/root/.emergent/automation_output/20260908_160914/console_20260908_160914.log",
+    "external_routing": "real FOSSGIS OSRM foot match and route APIs",
+    "first_periodic_request_seconds": 20.07,
+    "verified": ["raw GPS points retained", "finish dialog at46m", "cancel resumes original capture", "stop at approximately19m closes after final matching window", "exact closure and continuous segments", "matched GPS segment split and edited", "publication successful", "no routing during21seconds after publication"],
+    "physical_device_tested": false
+  },
+  "focused_backend": {"passed": 8, "failed": 0, "report": "iteration_7.json"},
+  "pure_geometry_and_window_tests": {"passed": 15, "failed": 0, "report": "iteration_8.json"},
+  "previous_report_findings": {
+    "20m_rounding": "fixed with precise near-threshold display and micrometre floating-point tolerance",
+    "manual_third_tap": "invalid arbitrary test map point; valid path taps verified200 individually",
+    "preview_timeout": "test clicked disabled control during calculation; deterministic state waits verify complete flow",
+    "422_visibility": "sticky error in create header; pending geometry visibly dashed",
+    "320_overflow": "not reproduced on root/html/body; horizontally clipped carousel descendants were counted by former probe",
+    "env_naming": "EXPO_PUBLIC_BACKEND_URL intentionally preserved per app architecture"
+  },
+  "limitations": ["GPS requires Doggo in foreground", "Physical Android/iOS and own-binary native Google provider remain to be verified", "Public foot routing availability and Google Maps test-key restrictions are external dependencies"]
+}

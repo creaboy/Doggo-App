@@ -261,10 +261,10 @@ function FilterModal({ open, onClose, filters, setFilters }: any) {
             <Pressable testID="close-filters" onPress={onClose}><X size={22} color={colors.onSurface} /></Pressable>
           </View>
           <ScrollView contentContainerStyle={{ paddingBottom: spacing.md, gap: spacing.lg }}>
-            <FilterGroup label="Difficulty" options={DIFF_OPTIONS} value={local.difficulty} onChange={(v) => setLocal({ ...local, difficulty: v })} labels={{ all: "All", ...difficultyLabels }} />
-            <FilterGroup label="Dog freedom" options={FREE_OPTIONS} value={local.dog_freedom} onChange={(v) => setLocal({ ...local, dog_freedom: v })} labels={{ all: "All", ...freedomLabels }} />
-            <FilterGroup label="Max duration" options={["0", "30", "60", "90", "120"]} value={String(local.max_duration)} onChange={(v) => setLocal({ ...local, max_duration: Number(v) })} labels={{ "0": "Any", "30": "≤30min", "60": "≤1h", "90": "≤1h30", "120": "≤2h" }} />
-            <FilterGroup label="Minimum rating" options={["0", "3", "4", "4.5"]} value={String(local.min_rating)} onChange={(v) => setLocal({ ...local, min_rating: Number(v) })} labels={{ "0": "Any", "3": "3+", "4": "4+", "4.5": "4.5+" }} />
+            <FilterGroup label="Difficulty" options={DIFF_OPTIONS} value={local.difficulty} onChange={(v: string) => setLocal({ ...local, difficulty: v })} labels={{ all: "All", ...difficultyLabels }} />
+            <FilterGroup label="Dog freedom" options={FREE_OPTIONS} value={local.dog_freedom} onChange={(v: string) => setLocal({ ...local, dog_freedom: v })} labels={{ all: "All", ...freedomLabels }} />
+            <FilterGroup label="Max duration" options={["0", "30", "60", "90", "120"]} value={String(local.max_duration)} onChange={(v: string) => setLocal({ ...local, max_duration: Number(v) })} labels={{ "0": "Any", "30": "≤30min", "60": "≤1h", "90": "≤1h30", "120": "≤2h" }} />
+            <FilterGroup label="Minimum rating" options={["0", "3", "4", "4.5"]} value={String(local.min_rating)} onChange={(v: string) => setLocal({ ...local, min_rating: Number(v) })} labels={{ "0": "Any", "3": "3+", "4": "4+", "4.5": "4.5+" }} />
           </ScrollView>
           <View style={styles.sheetActions}>
             <Pressable testID="clear-filters" style={styles.secondaryBtn} onPress={clear}><Text style={styles.secondaryBtnText}>Reset</Text></Pressable>

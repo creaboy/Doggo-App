@@ -21,19 +21,19 @@ export default function TabsLayout() {
     >
       <Tabs.Screen name="explore" options={{
         title: "Explore",
-        tabBarIcon: ({ color, size }) => <MapTrifold color={color} size={size} weight="regular" />,
+        tabBarIcon: ({ color, size }) => <MapTrifold color={String(color)} size={size} weight="regular" />,
       }} />
       <Tabs.Screen name="favorites" options={{
         title: "Favorites",
-        tabBarIcon: ({ color, size }) => <Heart color={color} size={size} weight="regular" />,
+        tabBarIcon: ({ color, size }) => <Heart color={String(color)} size={size} weight="regular" />,
       }} />
       <Tabs.Screen name="create" options={{
         title: "Create",
-        tabBarIcon: ({ color, size }) => <Plus color={color} size={size} weight="bold" />,
+        tabBarIcon: ({ color, size }) => <Plus color={String(color)} size={size} weight="bold" />,
       }} />
       <Tabs.Screen name="profile" options={{
         title: "Profile",
-        tabBarIcon: ({ color, size }) => <User color={color} size={size} weight="regular" />,
+        tabBarIcon: ({ color, size }) => <User color={String(color)} size={size} weight="regular" />,
       }} />
       <Tabs.Screen name="search" options={{ href: null }} />
     </Tabs>

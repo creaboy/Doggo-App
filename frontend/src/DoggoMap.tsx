@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useMemo } from "react";
-import { View, StyleSheet, Platform } from "react-native";
+import { View, Platform } from "react-native";
 import { colors } from "./theme";
+import { GoogleDoggoMap } from "./GoogleDoggoMap";
 
 // Types
 export type LatLng = { latitude: number; longitude: number };
-export type SegmentInput = { coordinates: LatLng[]; freedom: "free" | "caution" | "leash" };
+export type SegmentInput = { coordinates: LatLng[]; freedom: "free" | "caution" | "leash"; generated?: boolean; pending?: boolean };
 export type MarkerInput = { id: string; coordinate: LatLng; color?: string; label?: string; onPress?: () => void };
 
 const freedomColor: Record<string, string> = {
@@ -13,7 +14,7 @@ const freedomColor: Record<string, string> = {
   leash: colors.error,
 };
 
-type Props = {
+export type MapProps = {
   initialRegion?: { latitude: number; longitude: number; latitudeDelta: number; longitudeDelta: number };
   segments?: SegmentInput[];
   markers?: MarkerInput[];
@@ -21,7 +22,13 @@ type Props = {
   showsUserLocation?: boolean;
   style?: any;
   testID?: string;
+  fitToRoute?: boolean;
+  fitRevision?: number;
+  userCoordinate?: LatLng | null;
+  onSegmentPress?: (index: number, coordinate?: LatLng) => void;
+  selectedSegmentIndex?: number;
 };
+type Props = MapProps;
 
 function calcZoom(latDelta: number, lngDelta: number): number {
   const worldLat = 360;
@@ -65,12 +72,13 @@ function buildHtml(
   window.__renderData = function(data){
     layers.forEach(function(l){ map.removeLayer(l); });
     layers = [];
-    (data.segments || []).forEach(function(seg){
+    (data.segments || []).forEach(function(seg,index){
       if (!seg.coordinates || seg.coordinates.length < 2) return;
       var pts = seg.coordinates.map(function(c){ return [c.latitude, c.longitude]; });
       var color = seg.freedom === 'free' ? '${colors.success}' : seg.freedom === 'caution' ? '${colors.warning}' : '${colors.error}';
-      var pl = L.polyline(pts, {color: color, weight: 5}).addTo(map);
+      var pl = L.polyline(pts, {color: seg.pending ? '${colors.warning}' : color, weight: data.selectedSegmentIndex===index ? 8 : 5, dashArray:seg.generated || seg.pending ? '8 8' : null}).addTo(map);
       layers.push(pl);
+      if(data.segmentEditable){ var hit=L.polyline(pts,{weight:44,opacity:0}).addTo(map); hit.on('click',function(e){L.DomEvent.stopPropagation(e);post({type:'segmentPress',index:index,lat:e.latlng.lat,lng:e.latlng.lng});});layers.push(hit); }
     });
     (data.markers || []).forEach(function(m){
       var html = '<div class="pin" style="background:' + (m.color || '${colors.brandPrimary}') + '"></div>';
@@ -116,11 +124,11 @@ const NativeMapImpl: React.FC<Props> = (props) => {
 
   const pushData = () => {
     if (!ref.current || !readyRef.current) return;
-    const data = JSON.stringify({ segments: props.segments || [], markers: props.markers || [] });
+    const data = JSON.stringify({ segments: props.segments || [], markers: props.markers || [], segmentEditable: !!props.onSegmentPress, selectedSegmentIndex: props.selectedSegmentIndex });
     ref.current.injectJavaScript(`window.__renderData(${data}); true;`);
   };
 
-  useEffect(() => { pushData(); }, [props.segments, props.markers]);
+  useEffect(() => { pushData(); }, [props.segments, props.markers, props.onSegmentPress, props.selectedSegmentIndex]);
 
   const onMessage = (e: any) => {
     let msg: any = null;
@@ -130,6 +138,8 @@ const NativeMapImpl: React.FC<Props> = (props) => {
       pushData();
     } else if (msg.type === "press" && props.onPress) {
       props.onPress({ latitude: msg.lat, longitude: msg.lng });
+    } else if (msg.type === "segmentPress") {
+      props.onSegmentPress?.(msg.index, { latitude: msg.lat, longitude: msg.lng });
     } else if (msg.type === "markerPress" && props.markers) {
       const m = props.markers.find((x) => x.id === msg.id);
       if (m?.onPress) m.onPress();
@@ -203,6 +213,8 @@ const WebMapImpl: React.FC<Props> = (props) => {
   const mapRef = useRef<any>(null);
   const layersRef = useRef<any[]>([]);
   const readyRef = useRef(false);
+  const latestProps = useRef(props);
+  latestProps.current = props;
 
   useEffect(() => {
     let cancelled = false;
@@ -216,7 +228,7 @@ const WebMapImpl: React.FC<Props> = (props) => {
         subdomains: "abcd",
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
       }).addTo(map);
-      map.on("click", (e: any) => { if (props.onPress) props.onPress({ latitude: e.latlng.lat, longitude: e.latlng.lng }); });
+      map.on("click", (e: any) => { latestProps.current.onPress?.({ latitude: e.latlng.lat, longitude: e.latlng.lng }); });
       mapRef.current = map;
       readyRef.current = true;
       renderLayers();
@@ -240,11 +252,16 @@ const WebMapImpl: React.FC<Props> = (props) => {
     if (!L || !mapRef.current) return;
     layersRef.current.forEach((l) => { try { mapRef.current.removeLayer(l); } catch {} });
     layersRef.current = [];
-    props.segments?.forEach((seg) => {
+    props.segments?.forEach((seg, index) => {
       if (!seg.coordinates || seg.coordinates.length < 2) return;
       const pts = seg.coordinates.map((c) => [c.latitude, c.longitude]);
-      const pl = L.polyline(pts, { color: freedomColor[seg.freedom], weight: 5 }).addTo(mapRef.current);
+      const pl = L.polyline(pts, { color: seg.pending ? colors.warning : freedomColor[seg.freedom], weight: props.selectedSegmentIndex === index ? 8 : 5, dashArray: seg.generated || seg.pending ? '8 8' : undefined }).addTo(mapRef.current);
       layersRef.current.push(pl);
+      if (props.onSegmentPress) {
+        const hit = L.polyline(pts, { weight: 44, opacity: 0 }).addTo(mapRef.current);
+        hit.on('click', (e: any) => { L.DomEvent.stopPropagation(e); latestProps.current.onSegmentPress?.(index, { latitude: e.latlng.lat, longitude: e.latlng.lng }); });
+        layersRef.current.push(hit);
+      }
     });
     props.markers?.forEach((m) => {
       const color = m.color || colors.brandPrimary;
@@ -257,7 +274,7 @@ const WebMapImpl: React.FC<Props> = (props) => {
     });
   };
 
-  useEffect(() => { if (readyRef.current) renderLayers(); }, [props.segments, props.markers]);
+  useEffect(() => { if (readyRef.current) renderLayers(); }, [props.segments, props.markers, props.selectedSegmentIndex, props.onSegmentPress]);
 
   return (
     <View
@@ -273,7 +290,9 @@ const WebMapImpl: React.FC<Props> = (props) => {
   );
 };
 
-export const DoggoMap: React.FC<Props> = (props) => {
+const LeafletMap: React.FC<Props> = (props) => {
   if (Platform.OS === "web") return <WebMapImpl {...props} />;
   return <NativeMapImpl {...props} />;
 };
+
+export const DoggoMap: React.FC<Props> = (props) => <GoogleDoggoMap {...props} fallback={<LeafletMap {...props} />} />;

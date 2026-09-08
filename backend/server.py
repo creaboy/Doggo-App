@@ -12,9 +12,13 @@ import hashlib
 import secrets
 import httpx
 from datetime import datetime, timezone, timedelta
+from fastapi.responses import HTMLResponse
+from route_geometry import validate_loop
+from walking_routing import snap_points, match_points
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
+load_dotenv(ROOT_DIR / ".env.local")
 
 mongo_url = os.environ["MONGO_URL"]
 client = AsyncIOMotorClient(mongo_url)
@@ -380,8 +384,12 @@ def _compute_off_leash_pct(segments: List[RouteSegment]) -> int:
 
 @api_router.post("/walks")
 async def create_walk(inp: WalkCreate, user=Depends(current_user)):
-    if not inp.segments or not inp.segments[0].coordinates:
-        raise HTTPException(status_code=400, detail="Route required")
+    if not inp.title.strip() or inp.duration_min < 1:
+        raise HTTPException(422, "Un titre et une durée positive sont requis.")
+    try:
+        validate_loop(inp.segments)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
     distance = _compute_distance(inp.segments)
     off_leash = _compute_off_leash_pct(inp.segments)
     first = inp.segments[0].coordinates[0]
@@ -657,31 +665,33 @@ async def weekly_digest(lat: Optional[float] = None, lng: Optional[float] = None
 class SnapInput(BaseModel):
     points: List[List[float]]  # [[lat, lng], ...]
     profile: Literal["foot", "bike", "car"] = "foot"
+    alternatives: bool = False
 
 
 @api_router.post("/routing/snap")
 async def snap_route(inp: SnapInput):
-    if len(inp.points) < 2:
-        raise HTTPException(status_code=400, detail="Need at least 2 points")
-    coords = ";".join(f"{lng},{lat}" for lat, lng in inp.points)
-    url = f"https://router.project-osrm.org/route/v1/{inp.profile}/{coords}?geometries=geojson&overview=full"
-    try:
-        async with httpx.AsyncClient(timeout=15) as h:
-            r = await h.get(url)
-        if r.status_code != 200:
-            raise HTTPException(status_code=502, detail="Routing service error")
-        data = r.json()
-        if not data.get("routes"):
-            raise HTTPException(status_code=404, detail="No route found")
-        route = data["routes"][0]
-        # geojson coords are [lng, lat]; convert back to [lat, lng]
-        snapped = [[c[1], c[0]] for c in route["geometry"]["coordinates"]]
-        return {"coordinates": snapped, "distance_km": round(route.get("distance", 0) / 1000, 2), "duration_min": int(route.get("duration", 0) / 60)}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"OSRM error: {e}")
-        raise HTTPException(status_code=502, detail="Routing failed")
+    return await snap_points(inp.points, inp.profile, inp.alternatives)
+
+
+class MatchInput(BaseModel):
+    points: List[List[float]]
+    timestamps: List[int]
+    accuracies: List[float]
+    start_anchor: List[float]
+
+
+@api_router.post("/routing/match")
+async def match_gps(inp: MatchInput):
+    return await match_points(inp.points, inp.timestamps, inp.accuracies, inp.start_anchor)
+
+
+@api_router.get("/maps/view", response_class=HTMLResponse)
+async def maps_view():
+    from urllib.parse import quote
+    key = os.environ.get("GOOGLE_MAPS_BROWSER_KEY", "")
+    template = (ROOT_DIR / "maps_view.html").read_text()
+    return HTMLResponse(template.replace("__GOOGLE_BROWSER_KEY__", quote(key, safe="")),
+                        headers={"Cache-Control": "no-store", "Referrer-Policy": "strict-origin-when-cross-origin"})
 
 
 @api_router.get("/")

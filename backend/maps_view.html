@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Carte Doggo</title><style>html,body,#map{height:100%;width:100%;margin:0;padding:0}#status{position:absolute;top:8px;left:8px;font:14px sans-serif;background:white;padding:8px;border-radius:8px;z-index:2}#status:empty{display:none}</style></head>
+<body><div id="map" data-testid="google-map-canvas" aria-label="Carte Google Doggo"></div><div id="status" data-testid="google-map-status">Chargement de la carte…</div>
+<script>
+let map, data = {}, layers = [], regionKey = '', fitKey = '', locationMarker;
+const statusNode = document.getElementById('status');
+function post(payload) {
+  if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify(payload));
+  else if (window.parent !== window) window.parent.postMessage({doggoMap: true, ...payload}, location.origin);
+}
+function fail() { statusNode.textContent = 'Carte Google indisponible. Vérifiez la clé et la facturation Google.'; post({type:'error'}); }
+window.gm_authFailure = fail;
+function ll(p) { return {lat:p.latitude, lng:p.longitude}; }
+function point(p) { return p && Number.isFinite(p.latitude) && Number.isFinite(p.longitude) && Math.abs(p.latitude)<=90 && Math.abs(p.longitude)<=180; }
+function render() {
+  if (!map) return;
+  layers.forEach(l => l.setMap(null)); layers = [];
+  map.setOptions({styles:data.mapStyle || [], draggableCursor:data.editable ? 'crosshair' : null});
+  const bounds = new google.maps.LatLngBounds(); let count = 0;
+  (data.segments || []).forEach((seg,index) => {
+    if (!Array.isArray(seg.coordinates) || seg.coordinates.length<2 || !seg.coordinates.every(point)) return;
+    const path = seg.coordinates.map(p => { const q=ll(p); bounds.extend(q); count++; return q; });
+    const color = data.colors[seg.pending ? 'caution' : seg.freedom];
+    const dashed = seg.generated || seg.pending;
+    const selected = data.selectedSegmentIndex === index;
+    layers.push(new google.maps.Polyline({map,path,strokeColor:data.colors.outline,strokeWeight:selected ? 12 : 8,strokeOpacity:.95,clickable:false,zIndex:8}));
+    layers.push(new google.maps.Polyline({map,path,strokeColor:color,strokeWeight:selected ? 8 : 5,strokeOpacity:dashed ? 0 : 1,clickable:false,zIndex:9,
+      icons:dashed ? [{icon:{path:'M 0,-1 0,1',strokeOpacity:1,strokeWeight:5,strokeColor:color,scale:2},offset:'0',repeat:'12px'}] : []}));
+    if(data.segmentEditable){
+      const hit = new google.maps.Polyline({map,path,strokeColor:color,strokeWeight:44,strokeOpacity:0,clickable:true,zIndex:selected ? 12 : 11});
+      hit.addListener('click',e=>{if(e.domEvent)e.domEvent.stopPropagation();post({type:'segmentPress',index,lat:e.latLng.lat(),lng:e.latLng.lng()});});layers.push(hit);
+    }
+  });
+  (data.markers || []).forEach(m => {
+    if (!point(m.coordinate)) return;
+    const marker = new google.maps.Marker({map,position:ll(m.coordinate),title:m.label || '',zIndex:20,
+      icon:{path:google.maps.SymbolPath.CIRCLE,scale:m.id==='start' ? 12 : 9,fillColor:m.color || data.colors.free,fillOpacity:1,strokeColor:data.colors.outline,strokeWeight:3},
+      label:m.id==='start' ? {text:'D',color:data.colors.outline,fontSize:'11px',fontWeight:'700'} : undefined});
+    marker.addListener('click',()=>post({type:'markerPress',id:m.id})); layers.push(marker);
+  });
+  if (point(data.userCoordinate)) {
+    if (!locationMarker) locationMarker = new google.maps.Marker({map,zIndex:15,clickable:false,icon:{path:google.maps.SymbolPath.CIRCLE,scale:7,fillColor:data.colors.location,fillOpacity:1,strokeWeight:3,strokeColor:data.colors.outline}});
+    locationMarker.setPosition(ll(data.userCoordinate));
+  }
+  const r=data.initialRegion;
+  const nextKey=JSON.stringify(r);
+  if (r && nextKey!==regionKey && !data.fitToRoute) {
+    regionKey=nextKey;
+    map.fitBounds({south:r.latitude-r.latitudeDelta/2,north:r.latitude+r.latitudeDelta/2,west:r.longitude-r.longitudeDelta/2,east:r.longitude+r.longitudeDelta/2},24);
+  }
+  const nextFit=JSON.stringify([count,data.segments?.[0]?.coordinates?.[0],data.fitRevision]);
+  if (data.fitToRoute && count>1 && nextFit!==fitKey) { map.fitBounds(bounds,44); fitKey=nextFit; }
+  const canvas=document.getElementById('map');
+  canvas.setAttribute('data-route-segments', String((data.segments || []).length));
+  canvas.setAttribute('data-editable', String(!!data.editable));
+  canvas.setAttribute('data-selected-segment', String(data.selectedSegmentIndex ?? ''));
+  canvas.setAttribute('aria-label', 'Carte Doggo · '+(data.segments || []).length+' segments');
+}
+window.__doggoUpdate = function(payload) { if (!payload || typeof payload!=='object') return; data=payload; render(); };
+window.addEventListener('message',e=>{
+  if (e.source!==window.parent || e.origin!==location.origin || !e.data?.doggoMap) return;
+  window.__doggoUpdate(e.data.payload);
+});
+window.initDoggoMap = function() {
+  map=new google.maps.Map(document.getElementById('map'),{center:{lat:48.85,lng:2.35},zoom:14,mapTypeId:'roadmap',disableDefaultUI:true,zoomControl:true,gestureHandling:'greedy',clickableIcons:true});
+  map.addListener('click', e=>{ if (!e.latLng) return; if(e.placeId && data.editable) e.stop(); post({type:'press',lat:e.latLng.lat(),lng:e.latLng.lng()}); });
+  google.maps.event.addListenerOnce(map,'tilesloaded',()=>{statusNode.textContent='';post({type:'loaded'});});
+  render(); post({type:'ready'});
+};
+</script>
+<script async onerror="fail()" src="https://maps.googleapis.com/maps/api/js?key=__GOOGLE_BROWSER_KEY__&amp;v=weekly&amp;loading=async&amp;language=fr&amp;callback=initDoggoMap"></script>
+</body></html>
