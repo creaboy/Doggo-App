@@ -2,7 +2,13 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 const assert = require('assert/strict');
-const ts = require('/app/frontend/node_modules/typescript');
+
+let ts;
+try {
+  ts = require('typescript');
+} catch {
+  ts = require(path.join(__dirname, '../node_modules/typescript'));
+}
 
 function deepClone(v) {
   return JSON.parse(JSON.stringify(v));
@@ -104,19 +110,21 @@ function test(name, fn) {
 
 function loadCore() {
   const loader = makeLoader();
-  const routeDraft = loader.load('/app/frontend/src/routeDraft.ts');
-  const gpsDraft = loader.load('/app/frontend/src/gpsDraft.ts');
-  const segmentEditing = loader.load('/app/frontend/src/segmentEditing.ts');
+  const srcDir = path.join(__dirname, '../src');
+  const routeDraft = loader.load(path.join(srcDir, 'routeDraft.ts'));
+  const gpsDraft = loader.load(path.join(srcDir, 'gpsDraft.ts'));
+  const segmentEditing = loader.load(path.join(srcDir, 'segmentEditing.ts'));
   return { routeDraft, gpsDraft, segmentEditing };
 }
 
 function loadRouteCompletionWithStub(apiImpl) {
   const apiModule = { api: apiImpl };
+  const srcDir = path.join(__dirname, '../src');
   const loader = makeLoader({
     './api': apiModule,
-    '/app/frontend/src/api.ts': apiModule,
+    [path.join(srcDir, 'api.ts')]: apiModule,
   });
-  return loader.load('/app/frontend/src/routeCompletion.ts');
+  return loader.load(path.join(srcDir, 'routeCompletion.ts'));
 }
 
 // routeDraft threshold + format behavior
