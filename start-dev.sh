@@ -80,4 +80,14 @@ echo -e "\033[1;33m🛑 Appuyez sur Ctrl+C pour TOUT arrêter\033[0m"
 echo -e "\033[1;32m==========================================\n\033[0m"
 
 cd "$FRONTEND_DIR"
-npx expo start
+# Vidage auto du cache Metro si frontend/.env a changé (les EXPO_PUBLIC_* sont inlinées au build).
+ENV_HASH_FILE="$FRONTEND_DIR/.env.metrohash"
+CURRENT_HASH=$(md5sum "$FRONTEND_DIR/.env" 2>/dev/null | awk '{print $1}')
+STORED_HASH=$(cat "$ENV_HASH_FILE" 2>/dev/null || echo "")
+if [ -n "$CURRENT_HASH" ] && [ "$CURRENT_HASH" != "$STORED_HASH" ]; then
+    echo -e "\033[1;36m ℹ frontend/.env modifié : vidage du cache Metro (--clear).\033[0m"
+    echo "$CURRENT_HASH" > "$ENV_HASH_FILE"
+    npx expo start --clear
+else
+    npx expo start
+fi

@@ -138,9 +138,20 @@ Write-Host "🛑 Appuyez sur Ctrl+C pour TOUT arrêter proprement" -ForegroundCo
 Write-Host "==========================================" -ForegroundColor Green
 Write-Host ""
 
+# Vidage auto du cache Metro si frontend/.env a changé (les EXPO_PUBLIC_* sont inlinées au build).
+$envHashFile = Join-Path $frontendDir ".env.metrohash"
+$currentHash = (Get-FileHash $frontendEnv -Algorithm MD5).Hash
+$storedHash = ""
+if (Test-Path $envHashFile) { $storedHash = (Get-Content $envHashFile -Raw).Trim() }
+$envChanged = ($currentHash -ne $storedHash)
+if ($envChanged) {
+    Write-Host " ℹ frontend/.env modifié : vidage du cache Metro (--clear)." -ForegroundColor Cyan
+    Set-Content -Path $envHashFile -Value $currentHash -Encoding UTF8
+}
+
 try {
     Set-Location $frontendDir
-    npx expo start
+    if ($envChanged) { npx expo start --clear } else { npx expo start }
 } catch {
     Write-Host " Arrêt en cours..." -ForegroundColor Gray
 } finally {
