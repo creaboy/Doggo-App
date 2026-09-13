@@ -89,6 +89,7 @@ function buildHtml(
 .userdot{width:20px;height:20px;border-radius:50%;border:3px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,0.4);box-sizing:border-box;}
 .mapboxgl-ctrl-attrib{background:rgba(255,255,255,0.72);font-size:10px;}
 .mapboxgl-ctrl-group{border-radius:8px;}
+#fb{position:fixed;top:8px;left:50%;transform:translateX(-50%);background:rgba(20,20,20,0.6);color:#fff;font:11px -apple-system,"Segoe UI",Roboto,sans-serif;padding:3px 10px;border-radius:999px;z-index:9;pointer-events:none;}
 </style></head><body>
 <div id="m"></div>
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
@@ -200,6 +201,7 @@ function buildHtml(
 
   // Repli Leaflet si WebGL/MapLibre indisponible.
   function startLeaflet(){
+    var b=document.createElement('div'); b.id='fb'; b.textContent='Rendu raster · WebGL indisponible'; document.body.appendChild(b);
     var css=document.createElement('link'); css.rel='stylesheet'; css.href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'; document.head.appendChild(css);
     var s=document.createElement('script'); s.src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
     s.onload=function(){

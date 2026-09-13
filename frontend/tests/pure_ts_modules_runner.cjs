@@ -667,8 +667,9 @@ test('la WebView embarque MapLibre (style Liberty, sans clé) avec repli Leaflet
   const { html, userAgent } = buildNativeMapHtml();
   assert.match(html, /maplibre-gl/);
   assert.match(html, /tiles\.openfreemap\.org\/styles\/liberty/);
-  // Repli Leaflet présent pour les appareils sans WebGL.
+  // Repli Leaflet présent pour les appareils sans WebGL, avec badge visible.
   assert.match(html, /function startLeaflet/);
+  assert.match(html, /Rendu raster · WebGL indisponible/);
   assert.match(html, /tile\.openstreetmap\.org/);
   assert.match(userAgent, /Doggo/);
   const styleJson = html.split('var STYLE = ')[1].split(';\n')[0];
