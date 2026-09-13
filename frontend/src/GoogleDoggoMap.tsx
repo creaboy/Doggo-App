@@ -4,7 +4,7 @@ import Constants, { ExecutionEnvironment } from 'expo-constants';
 import type { MapProps } from './DoggoMap';
 import { colors } from './theme';
 import { googleMapStyle, mapColors } from './mapStyle';
-import { resolveTileSource } from './tileSource';
+import { resolveMapStyle } from './tileSource';
 import HostedMap from './HostedMap';
 import NativeGoogleMap from './NativeGoogleMap';
 
@@ -25,12 +25,10 @@ export function GoogleDoggoMap(props: MapProps & { fallback: React.ReactNode }) 
     (Platform.OS === 'android' ? Constants.expoConfig?.extra?.googleNativeAndroid : Constants.expoConfig?.extra?.googleNativeIos);
   const googleBrowserKey = useMemo(() => browserKeyConfigured(), []);
   const googleAvailable = !!native || googleBrowserKey;
-  const tiles = useMemo(() => resolveTileSource({
-    url: process.env.EXPO_PUBLIC_TILE_URL,
-    attribution: process.env.EXPO_PUBLIC_TILE_ATTRIBUTION,
-    subdomains: process.env.EXPO_PUBLIC_TILE_SUBDOMAINS,
-    credit: process.env.EXPO_PUBLIC_TILE_CREDIT,
+  const tiles = useMemo(() => resolveMapStyle({
+    styleUrl: process.env.EXPO_PUBLIC_MAP_STYLE_URL,
     cartoKey: process.env.EXPO_PUBLIC_CARTO_API_KEY,
+    style: process.env.EXPO_PUBLIC_MAP_STYLE,
   }), []);
   const url = `${Constants.expoConfig?.extra?.backendUrl || process.env.EXPO_PUBLIC_BACKEND_URL}/api/maps/view`;
   const sceneRevision = useRef(0);

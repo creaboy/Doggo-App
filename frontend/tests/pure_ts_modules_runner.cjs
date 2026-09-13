@@ -457,61 +457,40 @@ test('restoreFinalGpsPosition adds <=20m connector and rejects far endpoint', ()
 });
 
 
-// ============ tileSource : fond de carte OpenStreetMap sans clé ============
+// ============ tileSource : style vectoriel sans clé (MapLibre) ============
 
 function loadTileSource() {
   const loader = makeLoader();
   return loader.load(path.join(__dirname, '../src/tileSource.ts'));
 }
 
-test('tileSource par défaut = tuiles OpenStreetMap gratuites, sans clé', () => {
-  const { resolveTileSource } = loadTileSource();
-  const tiles = resolveTileSource({});
-  assert.equal(tiles.name, 'openstreetmap');
-  assert.equal(tiles.url, 'https://tile.openstreetmap.org/{z}/{x}/{y}.png');
-  assert.equal(tiles.maxZoom, 19);
-  assert.equal(tiles.subdomains, 'abc');
-  assert.match(tiles.attribution, /OpenStreetMap/);
-  assert.equal(/key=/.test(tiles.url), false);
-  assert.equal(tiles.keyless, true);
-  assert.equal(tiles.detectRetina, false);
+test('tileSource par défaut = OpenFreeMap Liberty, vectoriel, sans clé', () => {
+  const { resolveMapStyle } = loadTileSource();
+  const src = resolveMapStyle({});
+  assert.equal(src.name, 'openfreemap-liberty');
+  assert.equal(src.styleUrl, 'https://tiles.openfreemap.org/styles/liberty');
+  assert.equal(src.keyless, true);
+  assert.equal(/key=/.test(src.styleUrl), false);
   // Une clé vide (cas typique d'un .env non renseigné) ne doit rien changer.
-  assert.equal(resolveTileSource({ cartoKey: '   ', url: '' }).name, 'openstreetmap');
+  assert.equal(resolveMapStyle({ cartoKey: '   ', styleUrl: '' }).name, 'openfreemap-liberty');
 });
 
-test('tileSource avec clé CARTO = style Voyager façon Google Maps', () => {
-  const { resolveTileSource } = loadTileSource();
-  const tiles = resolveTileSource({ cartoKey: 'ma clé/test' });
-  assert.equal(tiles.name, 'carto-voyager');
-  assert.equal(tiles.url, 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?key=ma%20cl%C3%A9%2Ftest');
-  assert.equal(tiles.subdomains, 'abcd');
-  assert.equal(tiles.maxZoom, 20);
-  assert.equal(tiles.keyless, false);
-  assert.equal(tiles.detectRetina, true);
-  assert.match(tiles.attribution, /CARTO/);
-  assert.match(tiles.attribution, /OpenStreetMap/);
+test('tileSource avec clé CARTO = style vectoriel Voyager', () => {
+  const { resolveMapStyle } = loadTileSource();
+  const src = resolveMapStyle({ cartoKey: 'ma clé/test' });
+  assert.equal(src.name, 'carto-voyager-vector');
+  assert.equal(src.styleUrl, 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json?key=ma%20cl%C3%A9%2Ftest');
+  assert.equal(src.keyless, false);
 });
 
-test('tileSource accepte un fournisseur personnalisé et garde une attribution', () => {
-  const { resolveTileSource } = loadTileSource();
-  const custom = resolveTileSource({ url: ' https://example.org/tiles/{z}/{x}/{y}.png ' });
+test('tileSource accepte un style personnalisé ou Positron', () => {
+  const { resolveMapStyle } = loadTileSource();
+  const custom = resolveMapStyle({ styleUrl: ' https://exemple.org/style.json ' });
   assert.equal(custom.name, 'custom');
-  assert.equal(custom.url, 'https://example.org/tiles/{z}/{x}/{y}.png');
-  assert.equal(custom.subdomains, 'abc');
-  assert.equal(custom.keyless, false);
-  assert.match(custom.attribution, /OpenStreetMap/);
-  assert.equal(custom.credit, 'tuiles personnalisées');
-
-  const detailed = resolveTileSource({
-    url: 'https://example.org/{z}/{x}/{y}.png',
-    attribution: '&copy; Fournisseur',
-    subdomains: 'abcd',
-    credit: 'Fournisseur',
-    cartoKey: 'ignorée',
-  });
-  assert.equal(detailed.attribution, '&copy; Fournisseur');
-  assert.equal(detailed.subdomains, 'abcd');
-  assert.equal(detailed.credit, 'Fournisseur');
+  assert.equal(custom.styleUrl, 'https://exemple.org/style.json');
+  const positron = resolveMapStyle({ style: 'positron' });
+  assert.equal(positron.styleUrl, 'https://tiles.openfreemap.org/styles/positron');
+  assert.equal(positron.keyless, true);
 });
 
 test('tileSource expose un User-Agent identifiable pour la Tile Usage Policy OSM', () => {
@@ -519,7 +498,6 @@ test('tileSource expose un User-Agent identifiable pour la Tile Usage Policy OSM
   assert.match(TILE_USER_AGENT, /Doggo/);
   assert.equal(typeof TILE_USER_AGENT, 'string');
 });
-
 
 // ============ GoogleDoggoMap : Google uniquement si une clé est configurée ============
 
@@ -595,7 +573,7 @@ test('GoogleDoggoMap affiche directement le fond OpenStreetMap sans aucune clé 
 
 test('le bandeau sous la carte annonce la vraie source de tuiles', () => {
   const keyless = renderGoogleMap({ platform: 'ios', extra: {} });
-  assert.equal(keyless.types.includes('OpenStreetMap'), true);
+  assert.equal(keyless.types.includes('OpenFreeMap · OpenStreetMap'), true);
   assert.equal(keyless.types.includes(' · gratuite, sans clé API'), true);
 
   const withKey = renderGoogleMap({ platform: 'ios', extra: {}, env: { EXPO_PUBLIC_CARTO_API_KEY: 'ma-cle' } });
@@ -685,29 +663,24 @@ function buildNativeMapHtml({ env = {}, region = { latitude: 45.6, longitude: -1
   }
 }
 
-test('la WebView Leaflet embarque un zoom continu avec inertie et des tuiles OSM sans clé', () => {
+test('la WebView embarque MapLibre (style Liberty, sans clé) avec repli Leaflet', () => {
   const { html, userAgent } = buildNativeMapHtml();
-  // Zoom fractionnaire (plus de paliers) + inertie type Google Maps.
-  assert.match(html, /zoomSnap: 0,/);
-  assert.match(html, /zoomDelta: 0\.5/);
-  assert.match(html, /inertia: true, inertiaDeceleration: 2200, inertiaMaxSpeed: 1400/);
-  assert.match(html, /bounceAtZoomLimits: false/);
-  // Tuiles officielles OSM, sans clé.
-  assert.match(html, /https:\/\/tile\.openstreetmap\.org\/{z}\/{x}\/{y}\.png/);
-  assert.equal(/basemaps\.cartocdn\.com/.test(html), false);
-  // User-Agent identifiable (Tile Usage Policy OSM).
+  assert.match(html, /maplibre-gl/);
+  assert.match(html, /tiles\.openfreemap\.org\/styles\/liberty/);
+  // Repli Leaflet présent pour les appareils sans WebGL.
+  assert.match(html, /function startLeaflet/);
+  assert.match(html, /tile\.openstreetmap\.org/);
   assert.match(userAgent, /Doggo/);
-  // Le JS embarqué doit être syntaxiquement valide.
+  const styleJson = html.split('var STYLE = ')[1].split(';\n')[0];
+  assert.equal(/key=/.test(styleJson), false);
   const inline = html.split('<script>')[1].split('</script>')[0];
-  assert.doesNotThrow(() => new vm.Script(inline), 'le script Leaflet embarqué doit parser');
+  assert.doesNotThrow(() => new vm.Script(inline), 'le script embarqué doit parser');
 });
 
-test('la WebView Leaflet utilise CARTO Voyager quand une clé CARTO est fournie', () => {
+test('la WebView utilise le style vectoriel CARTO Voyager quand une clé CARTO est fournie', () => {
   const { html } = buildNativeMapHtml({ env: { EXPO_PUBLIC_CARTO_API_KEY: 'cle-123' } });
-  assert.match(html, /rastertiles\/voyager/);
-  assert.match(html, /key=cle-123/);
-  assert.match(html, /"detectRetina":true/);
-  assert.equal(/tile\.openstreetmap\.org/.test(html), false);
+  assert.match(html, /voyager-gl-style\/style\.json\?key=cle-123/);
+  assert.doesNotMatch(html, /styles\/liberty/);
 });
 
 async function run() {

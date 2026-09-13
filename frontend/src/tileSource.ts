@@ -1,57 +1,49 @@
 /**
- * Fond de carte OpenStreetMap utilisé dès qu'aucune clé Google Maps n'est configurée.
+ * Rendu de carte vectoriel (MapLibre GL), sans clé par défaut.
  *
- * Aucun compte ni carte bancaire n'est nécessaire par défaut : on utilise les tuiles
- * officielles OpenStreetMap (gratuites, riches en commerces / POI).
+ * Par défaut on utilise **OpenFreeMap** (style « Liberty », dérivé d'osm-bright) :
+ * c'est le rendu le plus proche de Google Maps — fond clair, routes blanches,
+ * parcs verts, eau bleue, icônes de commerces/POI colorées — et c'est gratuit,
+ * sans compte ni clé, usage commercial autorisé, sans limite annoncée.
  *
- * Deux options permettent d'obtenir un rendu plus épuré « façon Google Maps » :
- *  - `EXPO_PUBLIC_CARTO_API_KEY` : style CARTO Voyager (clé gratuite, sans compte,
- *    https://carto.com/basemaps/apikey — la clé évite le filigrane « API key required »).
- *  - `EXPO_PUBLIC_TILE_URL` : n'importe quel fournisseur de tuiles XYZ compatible Leaflet.
+ * Options :
+ *  - `EXPO_PUBLIC_MAP_STYLE_URL` : n'importe quel style MapLibre (style.json).
+ *  - `EXPO_PUBLIC_CARTO_API_KEY` : style vectoriel CARTO Voyager.
+ *  - `EXPO_PUBLIC_MAP_STYLE=positron` : OpenFreeMap Positron (ultra-épuré, sans commerces).
  *
- * Les variables sont lues par l'appelant (voir `tileEnv()` dans DoggoMap.tsx) afin que
- * Metro/Expo puisse les inliner au build (`process.env.EXPO_PUBLIC_*`), ce module reste
- * donc pur et testable.
+ * Les variables sont lues par l'appelant (voir `styleEnv()` dans DoggoMap.tsx) afin que
+ * Metro/Expo les inline au build ; ce module reste donc pur et testable.
  */
 
-export type TileEnv = {
-  url?: string | null;
-  attribution?: string | null;
-  subdomains?: string | null;
-  credit?: string | null;
+export type StyleEnv = {
+  styleUrl?: string | null;
   cartoKey?: string | null;
+  style?: string | null;
 };
 
-export type TileSource = {
-  name: 'openstreetmap' | 'carto-voyager' | 'custom';
+export type MapStyleSource = {
+  name: string;
   /** Texte court affiché sous la carte (pas d'HTML). */
   credit: string;
-  /** Template de tuiles XYZ au format Leaflet (`{s}`/`{z}`/`{x}`/`{y}`). */
-  url: string;
-  /** Attribution HTML exigée par la licence des données. */
-  attribution: string;
-  subdomains: string;
-  maxZoom: number;
-  /** Vrai si le fond s'utilise sans aucune clé (affiché sous la carte). */
+  /** URL d'un style MapLibre (style.json). */
+  styleUrl: string;
+  /** Vrai si aucun compte/clé n'est nécessaire. */
   keyless: boolean;
-  /** Le fournisseur sert des tuiles @2x (template `{r}`) : rendu net sur écrans retina. */
-  detectRetina: boolean;
 };
 
-const OSM_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
-
-const OPENSTREETMAP: TileSource = {
-  name: 'openstreetmap',
-  credit: 'OpenStreetMap',
-  url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-  attribution: OSM_ATTRIBUTION,
-  subdomains: 'abc',
-  maxZoom: 19,
+const OPENFREEMAP_LIBERTY: MapStyleSource = {
+  name: 'openfreemap-liberty',
+  credit: 'OpenFreeMap · OpenStreetMap',
+  styleUrl: 'https://tiles.openfreemap.org/styles/liberty',
   keyless: true,
-  detectRetina: false,
 };
 
-const CARTO_ATTRIBUTION = `${OSM_ATTRIBUTION} &copy; <a href="https://carto.com/attributions">CARTO</a>`;
+const OPENFREEMAP_POSITRON: MapStyleSource = {
+  name: 'openfreemap-positron',
+  credit: 'OpenFreeMap · OpenStreetMap',
+  styleUrl: 'https://tiles.openfreemap.org/styles/positron',
+  keyless: true,
+};
 
 function clean(value?: string | null): string {
   return typeof value === 'string' ? value.trim() : '';
@@ -60,35 +52,24 @@ function clean(value?: string | null): string {
 /**
  * User-Agent stable et identifiable, demandé par la Tile Usage Policy d'OpenStreetMap
  * pour les applications mobiles (https://operations.osmfoundation.org/policies/tiles/).
+ * Il est transmis à la WebView qui charge les tuiles.
  */
 export const TILE_USER_AGENT = 'DoggoApp/1.0 (balades pour chiens; +https://github.com/creaboy/Doggo-App)';
 
-export function resolveTileSource(env: TileEnv = {}): TileSource {
-  const url = clean(env.url);
-  if (url) {
-    return {
-      name: 'custom',
-      credit: clean(env.credit) || 'tuiles personnalisées',
-      url,
-      attribution: clean(env.attribution) || OSM_ATTRIBUTION,
-      subdomains: clean(env.subdomains) || 'abc',
-      maxZoom: 20,
-      keyless: false,
-      detectRetina: false,
-    };
+export function resolveMapStyle(env: StyleEnv = {}): MapStyleSource {
+  const styleUrl = clean(env.styleUrl);
+  if (styleUrl) {
+    return { name: 'custom', credit: 'style personnalisé', styleUrl, keyless: false };
   }
   const cartoKey = clean(env.cartoKey);
   if (cartoKey) {
     return {
-      name: 'carto-voyager',
+      name: 'carto-voyager-vector',
       credit: 'CARTO Voyager · OpenStreetMap',
-      url: `https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?key=${encodeURIComponent(cartoKey)}`,
-      attribution: CARTO_ATTRIBUTION,
-      subdomains: 'abcd',
-      maxZoom: 20,
+      styleUrl: `https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json?key=${encodeURIComponent(cartoKey)}`,
       keyless: false,
-      detectRetina: true,
     };
   }
-  return OPENSTREETMAP;
+  if (clean(env.style) === 'positron') return OPENFREEMAP_POSITRON;
+  return OPENFREEMAP_LIBERTY;
 }

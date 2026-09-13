@@ -132,33 +132,31 @@ Vous pouvez également créer un nouveau compte directement depuis l'écran de c
 
 ## 🗺️ Cartographie et Routage
 
-### Fond de carte par défaut : OpenStreetMap / Leaflet (gratuit, sans clé)
+### Fond de carte par défaut : vectoriel « façon Google Maps », sans clé
 
-Sur iOS, Android et Web, la carte s'affiche directement avec **OpenStreetMap + Leaflet**
-(tuiles officielles `tile.openstreetmap.org`) : **aucune clé API, aucun compte, aucune
-facturation**. Les commerces, restaurants, parcs et points d'eau sont affichés par les tuiles.
+Sur iOS, Android et Web, la carte est rendue avec **MapLibre GL** + **OpenFreeMap**
+(style **« Liberty »**, dérivé d'osm-bright) : fond gris très clair, routes blanches
+liserées de gris, autoroutes jaunes, parcs verts pâles, eau bleue, icônes de commerces /
+POI colorées et libellés de quartiers — le rendu le plus proche de Google Maps, **sans
+compte, sans clé, sans facturation**, usage commercial autorisé.
 
-Si aucune clé Google Maps n'est configurée, l'application n'essaie même pas de charger
-Google Maps : plus d'écran « Google Maps est indisponible », la carte s'affiche tout de suite.
+- **Zoom continu et fluide** (pinch sans paliers, inertie de déplacement), tuiles
+  vectorielles nettes à tous les niveaux de zoom.
+- **Repli automatique sur Leaflet / tuiles OpenStreetMap** si l'appareil n'a pas WebGL.
+- Si aucune clé Google Maps n'est configurée, l'application n'essaie même pas de charger
+  Google Maps : la carte s'affiche tout de suite.
 
-**Envie d'un rendu encore plus proche de Google Maps (plus épuré) ?** Demandez une clé CARTO
-**gratuite et sans compte** sur <https://carto.com/basemaps/apikey>, puis renseignez-la dans
-`frontend/.env` :
+Variantes (dans `frontend/.env`, puis relancer avec `npx expo start -c`) :
 
 ```bash
+# Style ultra-épuré (masque une partie des commerces) :
+EXPO_PUBLIC_MAP_STYLE=positron
+
+# Ou style vectoriel CARTO Voyager avec une clé gratuite (https://carto.com/basemaps/apikey) :
 EXPO_PUBLIC_CARTO_API_KEY=votre_cle_carto
-```
 
-Le style **CARTO Voyager** (équivalent visuel de Google Maps : fond clair, routes douces,
-commerces étiquetés) sera utilisé à la place. La clé est aussi ce qui supprime le filigrane
-« API key required » désormais appliqué par CARTO sur ses tuiles.
-
-Vous pouvez aussi imposer n'importe quel fournisseur de tuiles XYZ compatible Leaflet :
-
-```bash
-EXPO_PUBLIC_TILE_URL=https://{s}.exemple.com/tiles/{z}/{x}/{y}.png
-EXPO_PUBLIC_TILE_ATTRIBUTION=&copy; OpenStreetMap
-EXPO_PUBLIC_TILE_SUBDOMAINS=abcd
+# Ou n'importe quel style MapLibre (URL style.json) :
+EXPO_PUBLIC_MAP_STYLE_URL=https://exemple.org/style.json
 ```
 
 ### Routage
@@ -199,7 +197,7 @@ Doggo-App/
 │   │   ├── AuthContext.tsx   # Gestion de la session utilisateur
 │   │   ├── DoggoMap.tsx      # Composant carte interactif (Leaflet / OpenStreetMap)
 │   │   ├── GoogleDoggoMap.tsx # Utilise Google Maps uniquement si une clé est configurée
-│   │   ├── tileSource.ts     # Choix du fond de carte OSM (tuiles officielles ou CARTO)
+│   │   ├── tileSource.ts     # Choix du style vectoriel (OpenFreeMap/CARTO/personnalisé)
 │   │   ├── useRouteRecorder.ts # Enregistrement GPS en direct
 │   │   └── api.ts            # Client HTTP API
 │   ├── app.json              # Configuration Expo (Nom, Bundle ID, Permissions)
