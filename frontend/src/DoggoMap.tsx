@@ -74,6 +74,29 @@ const MAP_COLORS = {
   outline: colors.surfaceSecondary, brand: colors.brandPrimary, location: colors.location, muted: colors.muted,
 };
 
+/** Reteinte un style MapLibre (Liberty) vers la palette « Google Maps ». */
+function applyGooglePalette(map: any) {
+  const st = map.getStyle(); if (!st || !st.layers) return;
+  st.layers.forEach((l: any) => {
+    const sl = l['source-layer'] || ''; const id = l.id || '';
+    try {
+      if (l.type === 'background') map.setPaintProperty(id, 'background-color', '#F3F5F6');
+      else if (id === 'natural_earth') map.setPaintProperty(id, 'raster-opacity', 0);
+      else if (sl === 'water') map.setPaintProperty(id, l.type === 'fill' ? 'fill-color' : 'line-color', '#A9CCEA');
+      else if (sl === 'waterway') map.setPaintProperty(id, 'line-color', '#A9CCEA');
+      else if (sl === 'park' && l.type === 'fill') { map.setPaintProperty(id, 'fill-color', '#CDE7C1'); map.setPaintProperty(id, 'fill-opacity', 0.8); }
+      else if (sl === 'landcover') map.setPaintProperty(id, 'fill-color', id.indexOf('ice') === 0 ? '#E8F0F2' : '#D5E8C8');
+      else if (sl === 'landuse' && id.indexOf('residential') >= 0) map.setPaintProperty(id, 'fill-color', '#F0F2F3');
+      else if (sl === 'transportation') {
+        const isCasing = id.indexOf('casing') >= 0;
+        const yellow = /motorway|trunk/.test(id);
+        if (isCasing) map.setPaintProperty(id, 'line-color', yellow ? '#E8B84B' : '#DCDFE3');
+        else if (l.type === 'line') map.setPaintProperty(id, 'line-color', yellow ? '#FCD669' : '#FFFFFF');
+      }
+    } catch {}
+  });
+}
+
 // ============ Shared HTML template (MapLibre GL + repli Leaflet) ============
 
 function buildHtml(
@@ -187,12 +210,38 @@ function buildHtml(
     if(data.locationFocus && data.locationFocus.id!==focusId){ focusId=data.locationFocus.id; var c=data.locationFocus.coordinate; map.flyTo({center:[c.longitude,c.latitude],zoom:17}); }
   };
 
+  // Reteinte le style Liberty vers la palette « Google Maps » de la référence :
+  // fond gris très clair, eau bleue douce, parcs verts pâles, routes blanches,
+  // autoroutes/trunks jaunes. Sans clé ni style externe.
+  function googlePalette(mp){
+    var st=mp.getStyle(); if(!st||!st.layers) return;
+    st.layers.forEach(function(l){
+      var sl=l['source-layer']||''; var id=l.id||'';
+      try{
+        if(l.type==='background') mp.setPaintProperty(id,'background-color','#F3F5F6');
+        else if(id==='natural_earth') mp.setPaintProperty(id,'raster-opacity',0);
+        else if(sl==='water'){ mp.setPaintProperty(id, l.type==='fill'?'fill-color':'line-color', '#A9CCEA'); }
+        else if(sl==='waterway'){ mp.setPaintProperty(id,'line-color','#A9CCEA'); }
+        else if(sl==='park'&&l.type==='fill'){ mp.setPaintProperty(id,'fill-color','#CDE7C1'); mp.setPaintProperty(id,'fill-opacity',0.8); }
+        else if(sl==='landcover'){ mp.setPaintProperty(id,'fill-color', id.indexOf('ice')===0?'#E8F0F2':'#D5E8C8'); }
+        else if(sl==='landuse'&&id.indexOf('residential')>=0){ mp.setPaintProperty(id,'fill-color','#F0F2F3'); }
+        else if(sl==='transportation'){
+          var isCasing=id.indexOf('casing')>=0;
+          var yellow=/motorway|trunk/.test(id);
+          if(isCasing){ mp.setPaintProperty(id,'line-color', yellow?'#E8B84B':'#DCDFE3'); }
+          else if(l.type==='line'){ mp.setPaintProperty(id,'line-color', yellow?'#FCD669':'#FFFFFF'); }
+        }
+      }catch(e){}
+    });
+  }
+
   function startMapLibre(){
     map = new maplibregl.Map({ container:'m', style: STYLE.styleUrl, center: CENTER, zoom: ZOOM,
       attributionControl:{compact:true} });
     map.addControl(new maplibregl.NavigationControl({showCompass:false}),'top-left');
     map.on('click', function(e){ if(e.lngLat) post({type:'press',lat:e.lngLat.lat,lng:e.lngLat.lng}); });
     map.on('load', function(){
+      googlePalette(map);
       post({type:'ready'});
       if(window.__pendingData){ var d=window.__pendingData; window.__pendingData=null; window.__renderData(d); }
       if(window.__pendingLocation){ var l=window.__pendingLocation; window.__pendingLocation=null; window.__setUserLocation(l); }
@@ -220,7 +269,26 @@ function buildHtml(
           var mk=L.marker([m.coordinate.latitude,m.coordinate.longitude],{icon:L.divIcon({html:el,iconSize:[22,22],iconAnchor:[11,11],className:''})}).addTo(mapL);
           mk.on('click',function(){post({type:'markerPress',id:m.id});}); layers.push(mk); });
       };
-      window.__setUserLocation=function(data){ /* position gérée simplement */ };
+      var userMarker=null, accuracyCircle=null, focusIdL;
+      window.__setUserLocation=function(data){
+        if(data.userCoordinate){
+          var p=[data.userCoordinate.latitude,data.userCoordinate.longitude];
+          var color=data.locationStale?COLORS.muted:COLORS.location;
+          if(!userMarker) userMarker=L.circleMarker(p,{radius:8,color:'#fff',weight:3,fillOpacity:1,interactive:false}).addTo(mapL);
+          userMarker.setLatLng(p).setStyle({fillColor:color});
+          if(!accuracyCircle) accuracyCircle=L.circle(p,{weight:1,opacity:.2,fillOpacity:.09,interactive:false}).addTo(mapL);
+          accuracyCircle.setLatLng(p).setRadius(data.userAccuracy||0).setStyle({color:color,fillColor:color}).bringToBack();
+        } else {
+          if(userMarker){mapL.removeLayer(userMarker);userMarker=null;}
+          if(accuracyCircle){mapL.removeLayer(accuracyCircle);accuracyCircle=null;}
+        }
+        if(data.locationFocus && data.locationFocus.id!==focusIdL){focusIdL=data.locationFocus.id; var c=data.locationFocus.coordinate; mapL.setView([c.latitude,c.longitude],17);}
+      };
+      var origRender=window.__renderData;
+      window.__renderData=function(data){
+        origRender(data);
+        if(data.fitToRoute){ var bb=[]; (data.segments||[]).forEach(function(sg){(sg.coordinates||[]).forEach(function(c){bb.push([c.latitude,c.longitude]);});}); if(bb.length>1) mapL.fitBounds(bb,{padding:[44,44]}); }
+      };
       post({type:'ready'});
       if(window.__pendingData){ var d=window.__pendingData; window.__pendingData=null; window.__renderData(d); }
     };
@@ -453,7 +521,7 @@ const WebMapLibreImpl: React.FC<Props> = (props) => {
       const map = new mlgl.Map({ container: containerRef.current, style: style.styleUrl, center: [region.longitude, region.latitude], zoom: calcZoom(region.latitudeDelta, region.longitudeDelta), attributionControl: { compact: true } });
       map.addControl(new mlgl.NavigationControl({ showCompass: false }), "top-left");
       map.on("click", (e: any) => { if (e.lngLat) latestProps.current.onPress?.({ latitude: e.lngLat.lat, longitude: e.lngLat.lng }); });
-      map.on("load", () => { renderLayers(); renderLocation(); });
+      map.on("load", () => { applyGooglePalette(map); renderLayers(); renderLocation(); });
       mapRef.current = map;
     }).catch(() => {});
     return () => {

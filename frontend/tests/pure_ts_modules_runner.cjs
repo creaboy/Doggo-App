@@ -670,6 +670,11 @@ test('la WebView embarque MapLibre (style Liberty, sans clé) avec repli Leaflet
   // Repli Leaflet présent pour les appareils sans WebGL, avec badge visible.
   assert.match(html, /function startLeaflet/);
   assert.match(html, /Rendu raster · WebGL indisponible/);
+  // Le repli Leaflet rend aussi le point GPS (plus de fonction vide).
+  assert.match(html, /L\.circleMarker/);
+  // Palette « Google Maps » appliquée au style Liberty.
+  assert.match(html, /function googlePalette/);
+  assert.match(html, /#FCD669/);
   assert.match(html, /tile\.openstreetmap\.org/);
   assert.match(userAgent, /Doggo/);
   const styleJson = html.split('var STYLE = ')[1].split(';\n')[0];
