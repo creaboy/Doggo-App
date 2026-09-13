@@ -54,7 +54,7 @@ export function GoogleDoggoMap(props: MapProps & { fallback: React.ReactNode }) 
   if (!googleAvailable || useOpenStreetMap) return <View style={[styles.root, props.style]}>
     {props.fallback}
     <Text testID={`${props.testID}-fallback-notice`} style={styles.attribution}>
-      {failed ? 'Google Maps indisponible — ' : ''}Carte {tiles.credit} · gratuite, sans clé API
+      {failed ? 'Google Maps indisponible — ' : ''}Carte {tiles.credit}{tiles.keyless ? ' · gratuite, sans clé API' : ''}
     </Text>
   </View>;
   return <View style={[styles.root, props.style]} testID={props.testID}>

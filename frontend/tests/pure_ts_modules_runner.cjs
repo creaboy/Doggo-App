@@ -473,6 +473,8 @@ test('tileSource par défaut = tuiles OpenStreetMap gratuites, sans clé', () =>
   assert.equal(tiles.subdomains, 'abc');
   assert.match(tiles.attribution, /OpenStreetMap/);
   assert.equal(/key=/.test(tiles.url), false);
+  assert.equal(tiles.keyless, true);
+  assert.equal(tiles.detectRetina, false);
   // Une clé vide (cas typique d'un .env non renseigné) ne doit rien changer.
   assert.equal(resolveTileSource({ cartoKey: '   ', url: '' }).name, 'openstreetmap');
 });
@@ -484,6 +486,8 @@ test('tileSource avec clé CARTO = style Voyager façon Google Maps', () => {
   assert.equal(tiles.url, 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?key=ma%20cl%C3%A9%2Ftest');
   assert.equal(tiles.subdomains, 'abcd');
   assert.equal(tiles.maxZoom, 20);
+  assert.equal(tiles.keyless, false);
+  assert.equal(tiles.detectRetina, true);
   assert.match(tiles.attribution, /CARTO/);
   assert.match(tiles.attribution, /OpenStreetMap/);
 });
@@ -494,6 +498,7 @@ test('tileSource accepte un fournisseur personnalisé et garde une attribution',
   assert.equal(custom.name, 'custom');
   assert.equal(custom.url, 'https://example.org/tiles/{z}/{x}/{y}.png');
   assert.equal(custom.subdomains, 'abc');
+  assert.equal(custom.keyless, false);
   assert.match(custom.attribution, /OpenStreetMap/);
   assert.equal(custom.credit, 'tuiles personnalisées');
 
@@ -588,6 +593,16 @@ test('GoogleDoggoMap affiche directement le fond OpenStreetMap sans aucune clé 
   assert.equal(testIds.includes('map-fallback-notice'), true);
 });
 
+test('le bandeau sous la carte annonce la vraie source de tuiles', () => {
+  const keyless = renderGoogleMap({ platform: 'ios', extra: {} });
+  assert.equal(keyless.types.includes('OpenStreetMap'), true);
+  assert.equal(keyless.types.includes(' · gratuite, sans clé API'), true);
+
+  const withKey = renderGoogleMap({ platform: 'ios', extra: {}, env: { EXPO_PUBLIC_CARTO_API_KEY: 'ma-cle' } });
+  assert.equal(withKey.types.includes('CARTO Voyager · OpenStreetMap'), true);
+  assert.equal(withKey.types.includes(' · gratuite, sans clé API'), false);
+});
+
 test('GoogleDoggoMap bascule sur OpenStreetMap en Expo Go Android sans clé native', () => {
   const { types } = renderGoogleMap({ platform: 'android', extra: { googleNativeAndroid: false, googleBrowser: false } });
   assert.equal(types.includes('OSM_FALLBACK'), true);
@@ -604,6 +619,95 @@ test('GoogleDoggoMap garde le SDK Google natif quand la clé native est configur
   const { types } = renderGoogleMap({ platform: 'android', extra: { googleNativeAndroid: true } });
   assert.equal(types.includes('NativeGoogleMap'), true);
   assert.equal(types.includes('OSM_FALLBACK'), false);
+});
+
+
+// ============ HTML Leaflet généré pour la WebView native (iOS/Android) ============
+
+function findElement(node, predicate) {
+  if (Array.isArray(node)) {
+    for (const n of node) { const hit = findElement(n, predicate); if (hit) return hit; }
+    return null;
+  }
+  if (node && typeof node === 'object' && 'type' in node) {
+    if (predicate(node)) return node;
+    const hit = findElement(node.children, predicate);
+    if (hit) return hit;
+    // DoggoMap transmet la carte Leaflet via la prop `fallback`, pas comme enfant.
+    if (node.props && node.props.fallback) return findElement(node.props.fallback, predicate);
+  }
+  return null;
+}
+
+/** Rend DoggoMap -> fallback Leaflet -> WebView et renvoie le HTML embarqué. */
+function buildNativeMapHtml({ env = {}, region = { latitude: 45.6, longitude: -1.0, latitudeDelta: 0.05, longitudeDelta: 0.05 } } = {}) {
+  const saved = { ...process.env };
+  for (const key of ['EXPO_PUBLIC_TILE_URL', 'EXPO_PUBLIC_CARTO_API_KEY', 'EXPO_PUBLIC_GOOGLE_MAPS_BROWSER_KEY']) delete process.env[key];
+  Object.assign(process.env, env);
+  try {
+    const element = (type, props, ...children) => ({ type, props: props || {}, children: children.flat(Infinity) });
+    const reactStub = {
+      __esModule: true,
+      useState: (init) => [typeof init === 'function' ? init() : init, () => {}],
+      useMemo: (fn) => fn(),
+      useCallback: (fn) => fn,
+      useRef: (value) => ({ current: value }),
+      useEffect: () => {},
+    };
+    reactStub.default = { createElement: element, Fragment: 'Fragment' };
+    const srcDir = path.join(__dirname, '../src');
+    const loader = makeLoader({
+      react: reactStub,
+      'react-native': {
+        View: 'View', Text: 'Text', Pressable: 'Pressable', ActivityIndicator: 'ActivityIndicator',
+        StyleSheet: { create: (styles) => styles }, Platform: { OS: 'ios' }, Linking: { openURL: () => {} },
+      },
+      'react-native-webview': { WebView: 'WebView' },
+      'expo-constants': { __esModule: true, default: { expoConfig: { extra: {} }, executionEnvironment: 'bare' }, ExecutionEnvironment: { Bare: 'bare', StoreClient: 'storeClient' } },
+      './useLiveMapLocation': { useLiveMapLocation: () => ({ coordinate: null, accuracy: null, status: 'idle', retry: () => {} }) },
+      './MapLocationControl': { MapLocationControl: 'MapLocationControl' },
+      './HostedMap': { __esModule: true, default: 'HostedMap' },
+      './NativeGoogleMap': { __esModule: true, default: 'NativeGoogleMap' },
+    });
+    const mod = loader.load(path.join(srcDir, 'DoggoMap.tsx'));
+    const tree = mod.DoggoMap({ testID: 'map', initialRegion: region });
+    const fallbackEl = findElement(tree, (el) => typeof el.type === 'function' && el.type.name === 'LeafletMap');
+    assert.ok(fallbackEl, 'DoggoMap doit passer le fallback Leaflet');
+    // LeafletMap -> NativeMapImpl -> View(WebView) : on déroule les composants fonction.
+    let rendered = fallbackEl;
+    for (let i = 0; i < 5 && typeof rendered.type === 'function'; i++) rendered = rendered.type(rendered.props);
+    const webview = findElement(rendered, (el) => el.type === 'WebView');
+    assert.ok(webview, 'une WebView Leaflet doit être produite sur mobile');
+    return { html: webview.props.source.html, userAgent: webview.props.userAgent };
+  } finally {
+    for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
+    Object.assign(process.env, saved);
+  }
+}
+
+test('la WebView Leaflet embarque un zoom continu avec inertie et des tuiles OSM sans clé', () => {
+  const { html, userAgent } = buildNativeMapHtml();
+  // Zoom fractionnaire (plus de paliers) + inertie type Google Maps.
+  assert.match(html, /zoomSnap: 0,/);
+  assert.match(html, /zoomDelta: 0\.5/);
+  assert.match(html, /inertia: true, inertiaDeceleration: 2200, inertiaMaxSpeed: 1400/);
+  assert.match(html, /bounceAtZoomLimits: false/);
+  // Tuiles officielles OSM, sans clé.
+  assert.match(html, /https:\/\/tile\.openstreetmap\.org\/{z}\/{x}\/{y}\.png/);
+  assert.equal(/basemaps\.cartocdn\.com/.test(html), false);
+  // User-Agent identifiable (Tile Usage Policy OSM).
+  assert.match(userAgent, /Doggo/);
+  // Le JS embarqué doit être syntaxiquement valide.
+  const inline = html.split('<script>')[1].split('</script>')[0];
+  assert.doesNotThrow(() => new vm.Script(inline), 'le script Leaflet embarqué doit parser');
+});
+
+test('la WebView Leaflet utilise CARTO Voyager quand une clé CARTO est fournie', () => {
+  const { html } = buildNativeMapHtml({ env: { EXPO_PUBLIC_CARTO_API_KEY: 'cle-123' } });
+  assert.match(html, /rastertiles\/voyager/);
+  assert.match(html, /key=cle-123/);
+  assert.match(html, /"detectRetina":true/);
+  assert.equal(/tile\.openstreetmap\.org/.test(html), false);
 });
 
 async function run() {

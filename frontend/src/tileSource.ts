@@ -32,6 +32,10 @@ export type TileSource = {
   attribution: string;
   subdomains: string;
   maxZoom: number;
+  /** Vrai si le fond s'utilise sans aucune clé (affiché sous la carte). */
+  keyless: boolean;
+  /** Le fournisseur sert des tuiles @2x (template `{r}`) : rendu net sur écrans retina. */
+  detectRetina: boolean;
 };
 
 const OSM_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
@@ -43,6 +47,8 @@ const OPENSTREETMAP: TileSource = {
   attribution: OSM_ATTRIBUTION,
   subdomains: 'abc',
   maxZoom: 19,
+  keyless: true,
+  detectRetina: false,
 };
 
 const CARTO_ATTRIBUTION = `${OSM_ATTRIBUTION} &copy; <a href="https://carto.com/attributions">CARTO</a>`;
@@ -67,6 +73,8 @@ export function resolveTileSource(env: TileEnv = {}): TileSource {
       attribution: clean(env.attribution) || OSM_ATTRIBUTION,
       subdomains: clean(env.subdomains) || 'abc',
       maxZoom: 20,
+      keyless: false,
+      detectRetina: false,
     };
   }
   const cartoKey = clean(env.cartoKey);
@@ -78,6 +86,8 @@ export function resolveTileSource(env: TileEnv = {}): TileSource {
       attribution: CARTO_ATTRIBUTION,
       subdomains: 'abcd',
       maxZoom: 20,
+      keyless: false,
+      detectRetina: true,
     };
   }
   return OPENSTREETMAP;

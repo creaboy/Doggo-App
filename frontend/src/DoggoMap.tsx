@@ -77,9 +77,17 @@ function buildHtml(
 <script>
 (function(){
   var TILES = ${JSON.stringify(tiles)};
-  var map = L.map('m', {zoomControl: true, attributionControl: true, zoomSnap: 0.5, zoomDelta: 0.5}).setView([${region.latitude}, ${region.longitude}], ${zoom});
+  var MAP_OPTIONS = {
+    zoomControl: true, attributionControl: true,
+    zoomSnap: 0, zoomDelta: 0.5, wheelPxPerZoomLevel: 90,
+    inertia: true, inertiaDeceleration: 2200, inertiaMaxSpeed: 1400, easeLinearity: 0.25,
+    bounceAtZoomLimits: false, touchZoom: true, zoomAnimation: true, fadeAnimation: true
+  };
+  var TILE_OPTIONS = {maxZoom: TILES.maxZoom, subdomains: TILES.subdomains, attribution: TILES.attribution,
+    detectRetina: TILES.detectRetina, keepBuffer: 3, updateWhenIdle: false, updateInterval: 150};
+  var map = L.map('m', MAP_OPTIONS).setView([${region.latitude}, ${region.longitude}], ${zoom});
   if (map.attributionControl) map.attributionControl.setPrefix(false);
-  L.tileLayer(TILES.url, {maxZoom: TILES.maxZoom, subdomains: TILES.subdomains, attribution: TILES.attribution, keepBuffer: 2}).addTo(map);
+  L.tileLayer(TILES.url, TILE_OPTIONS).addTo(map);
   var layers = [];
   var userMarker = null;
   var accuracyCircle = null;
@@ -284,14 +292,22 @@ const WebMapImpl: React.FC<Props> = (props) => {
     loadLeaflet().then((L) => {
       if (cancelled || !containerRef.current || mapRef.current) return;
       const region = props.initialRegion || { latitude: 48.85, longitude: 2.35, latitudeDelta: 0.1, longitudeDelta: 0.1 };
-      const map = L.map(containerRef.current, { zoomControl: true, attributionControl: true, zoomSnap: 0.5, zoomDelta: 0.5 })
-        .setView([region.latitude, region.longitude], calcZoom(region.latitudeDelta, region.longitudeDelta));
+      const map = L.map(containerRef.current, {
+        zoomControl: true, attributionControl: true,
+        zoomSnap: 0, zoomDelta: 0.5, wheelPxPerZoomLevel: 90,
+        inertia: true, inertiaDeceleration: 2200, inertiaMaxSpeed: 1400, easeLinearity: 0.25,
+        bounceAtZoomLimits: false, touchZoom: true, zoomAnimation: true, fadeAnimation: true,
+      }).setView([region.latitude, region.longitude], calcZoom(region.latitudeDelta, region.longitudeDelta));
       const tiles = resolveTileSource(tileEnv());
       if (map.attributionControl) map.attributionControl.setPrefix(false);
       L.tileLayer(tiles.url, {
         maxZoom: tiles.maxZoom,
         subdomains: tiles.subdomains,
         attribution: tiles.attribution,
+        detectRetina: tiles.detectRetina,
+        keepBuffer: 3,
+        updateWhenIdle: false,
+        updateInterval: 150,
       }).addTo(map);
       map.on("click", (e: any) => { latestProps.current.onPress?.({ latitude: e.latlng.lat, longitude: e.latlng.lng }); });
       mapRef.current = map;
