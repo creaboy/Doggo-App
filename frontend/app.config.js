@@ -20,5 +20,8 @@ module.exports = ({ config }) => ({
     backendUrl: process.env.EXPO_PUBLIC_BACKEND_URL,
     googleNativeAndroid: !!process.env.EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_KEY,
     googleNativeIos: !!process.env.EXPO_PUBLIC_GOOGLE_MAPS_IOS_KEY,
+    // Sans clé "browser", la carte Google Maps JS ne peut pas se charger :
+    // l'app affiche directement le fond OpenStreetMap / Leaflet.
+    googleBrowser: !!process.env.EXPO_PUBLIC_GOOGLE_MAPS_BROWSER_KEY,
   },
 });

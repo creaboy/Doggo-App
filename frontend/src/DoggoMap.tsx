@@ -4,6 +4,21 @@ import { colors } from "./theme";
 import { GoogleDoggoMap } from "./GoogleDoggoMap";
 import { useLiveMapLocation } from "./useLiveMapLocation";
 import { MapLocationControl } from "./MapLocationControl";
+import { resolveTileSource, TILE_USER_AGENT, TileSource } from "./tileSource";
+
+/**
+ * Variables `EXPO_PUBLIC_*` lues ici (et non passées comme objet) pour que Metro les
+ * inline au build. Le fond de carte OpenStreetMap ne demande aucune clé par défaut.
+ */
+function tileEnv() {
+  return {
+    url: process.env.EXPO_PUBLIC_TILE_URL,
+    attribution: process.env.EXPO_PUBLIC_TILE_ATTRIBUTION,
+    subdomains: process.env.EXPO_PUBLIC_TILE_SUBDOMAINS,
+    credit: process.env.EXPO_PUBLIC_TILE_CREDIT,
+    cartoKey: process.env.EXPO_PUBLIC_CARTO_API_KEY,
+  };
+}
 
 // Types
 export type LatLng = { latitude: number; longitude: number };
@@ -44,7 +59,8 @@ function calcZoom(latDelta: number, lngDelta: number): number {
 // ============ Shared HTML template ============
 
 function buildHtml(
-  region: { latitude: number; longitude: number; latitudeDelta: number; longitudeDelta: number }
+  region: { latitude: number; longitude: number; latitudeDelta: number; longitudeDelta: number },
+  tiles: TileSource
 ): string {
   const zoom = calcZoom(region.latitudeDelta, region.longitudeDelta);
   return `<!doctype html><html><head>
@@ -52,14 +68,18 @@ function buildHtml(
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <style>html,body,#m{margin:0;padding:0;height:100%;width:100%;background:#F1F4EE;}
 .pin{width:22px;height:22px;border-radius:50%;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.4);box-sizing:border-box;}
-.leaflet-container{background:#F1F4EE;}
+.leaflet-container{background:#F1F4EE;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}
+.leaflet-control-attribution{background:rgba(255,255,255,0.72);font-size:10px;line-height:14px;padding:1px 5px;}
+.leaflet-control-zoom a{color:#333;}
 </style></head><body>
 <div id="m"></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 (function(){
-  var map = L.map('m', {zoomControl: true, attributionControl: true}).setView([${region.latitude}, ${region.longitude}], ${zoom});
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png', {maxZoom:20, subdomains:'abcd', attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'}).addTo(map);
+  var TILES = ${JSON.stringify(tiles)};
+  var map = L.map('m', {zoomControl: true, attributionControl: true, zoomSnap: 0.5, zoomDelta: 0.5}).setView([${region.latitude}, ${region.longitude}], ${zoom});
+  if (map.attributionControl) map.attributionControl.setPrefix(false);
+  L.tileLayer(TILES.url, {maxZoom: TILES.maxZoom, subdomains: TILES.subdomains, attribution: TILES.attribution, keepBuffer: 2}).addTo(map);
   var layers = [];
   var userMarker = null;
   var accuracyCircle = null;
@@ -130,7 +150,8 @@ const NativeMapImpl: React.FC<Props> = (props) => {
   const readyRef = useRef(false);
 
   const region = props.initialRegion || { latitude: 48.85, longitude: 2.35, latitudeDelta: 0.1, longitudeDelta: 0.1 };
-  const html = useMemo(() => buildHtml(region), [region.latitude, region.longitude, region.latitudeDelta, region.longitudeDelta]);
+  const tiles = useMemo(() => resolveTileSource(tileEnv()), []);
+  const html = useMemo(() => buildHtml(region, tiles), [region.latitude, region.longitude, region.latitudeDelta, region.longitudeDelta, tiles]);
 
   const pushData = () => {
     if (!ref.current || !readyRef.current) return;
@@ -175,6 +196,7 @@ const NativeMapImpl: React.FC<Props> = (props) => {
       <WebView
         ref={ref}
         originWhitelist={["*"]}
+        userAgent={TILE_USER_AGENT}
         source={{ html }}
         onMessage={onMessage}
         javaScriptEnabled
@@ -262,12 +284,14 @@ const WebMapImpl: React.FC<Props> = (props) => {
     loadLeaflet().then((L) => {
       if (cancelled || !containerRef.current || mapRef.current) return;
       const region = props.initialRegion || { latitude: 48.85, longitude: 2.35, latitudeDelta: 0.1, longitudeDelta: 0.1 };
-      const map = L.map(containerRef.current, { zoomControl: true, attributionControl: true })
+      const map = L.map(containerRef.current, { zoomControl: true, attributionControl: true, zoomSnap: 0.5, zoomDelta: 0.5 })
         .setView([region.latitude, region.longitude], calcZoom(region.latitudeDelta, region.longitudeDelta));
-      L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png", {
-        maxZoom: 20,
-        subdomains: "abcd",
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+      const tiles = resolveTileSource(tileEnv());
+      if (map.attributionControl) map.attributionControl.setPrefix(false);
+      L.tileLayer(tiles.url, {
+        maxZoom: tiles.maxZoom,
+        subdomains: tiles.subdomains,
+        attribution: tiles.attribution,
       }).addTo(map);
       map.on("click", (e: any) => { latestProps.current.onPress?.({ latitude: e.latlng.lat, longitude: e.latlng.lng }); });
       mapRef.current = map;

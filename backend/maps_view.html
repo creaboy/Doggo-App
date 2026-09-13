@@ -9,7 +9,7 @@ function post(payload) {
   if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify(payload));
   else if (window.parent !== window) window.parent.postMessage({doggoMap: true, ...payload}, location.origin);
 }
-function fail() { statusNode.textContent = 'Carte Google indisponible. Vérifiez la clé et la facturation Google.'; post({type:'error'}); }
+function fail() { statusNode.textContent = 'Carte Google indisponible. Renseignez GOOGLE_MAPS_BROWSER_KEY (backend/.env) ou laissez vide pour utiliser OpenStreetMap.'; post({type:'error'}); }
 window.gm_authFailure = fail;
 function ll(p) { return {lat:p.latitude, lng:p.longitude}; }
 function point(p) { return p && Number.isFinite(p.latitude) && Number.isFinite(p.longitude) && Math.abs(p.latitude)<=90 && Math.abs(p.longitude)<=180; }
@@ -88,5 +88,17 @@ window.initDoggoMap = function() {
   render(); post({type:'ready'});
 };
 </script>
-<script async onerror="fail()" src="https://maps.googleapis.com/maps/api/js?key=__GOOGLE_BROWSER_KEY__&amp;v=weekly&amp;loading=async&amp;language=fr&amp;callback=initDoggoMap"></script>
+<script>
+// Sans clé Google, on n'essaie même pas de charger l'API : on signale l'erreur tout de suite
+// pour que l'application bascule immédiatement sur le fond OpenStreetMap / Leaflet.
+(function loadGoogleMaps() {
+  var key = '__GOOGLE_BROWSER_KEY__';
+  if (!key) { fail(); return; }
+  var s = document.createElement('script');
+  s.async = true;
+  s.onerror = fail;
+  s.src = 'https://maps.googleapis.com/maps/api/js?key=' + key + '&v=weekly&loading=async&language=fr&callback=initDoggoMap';
+  document.head.appendChild(s);
+})();
+</script>
 </body></html>

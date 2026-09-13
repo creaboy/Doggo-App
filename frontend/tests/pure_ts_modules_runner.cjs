@@ -456,6 +456,156 @@ test('restoreFinalGpsPosition adds <=20m connector and rejects far endpoint', ()
   assert.throws(() => gpsDraft.restoreFinalGpsPosition(farDraft), /trop loin du GPS/);
 });
 
+
+// ============ tileSource : fond de carte OpenStreetMap sans clé ============
+
+function loadTileSource() {
+  const loader = makeLoader();
+  return loader.load(path.join(__dirname, '../src/tileSource.ts'));
+}
+
+test('tileSource par défaut = tuiles OpenStreetMap gratuites, sans clé', () => {
+  const { resolveTileSource } = loadTileSource();
+  const tiles = resolveTileSource({});
+  assert.equal(tiles.name, 'openstreetmap');
+  assert.equal(tiles.url, 'https://tile.openstreetmap.org/{z}/{x}/{y}.png');
+  assert.equal(tiles.maxZoom, 19);
+  assert.equal(tiles.subdomains, 'abc');
+  assert.match(tiles.attribution, /OpenStreetMap/);
+  assert.equal(/key=/.test(tiles.url), false);
+  // Une clé vide (cas typique d'un .env non renseigné) ne doit rien changer.
+  assert.equal(resolveTileSource({ cartoKey: '   ', url: '' }).name, 'openstreetmap');
+});
+
+test('tileSource avec clé CARTO = style Voyager façon Google Maps', () => {
+  const { resolveTileSource } = loadTileSource();
+  const tiles = resolveTileSource({ cartoKey: 'ma clé/test' });
+  assert.equal(tiles.name, 'carto-voyager');
+  assert.equal(tiles.url, 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?key=ma%20cl%C3%A9%2Ftest');
+  assert.equal(tiles.subdomains, 'abcd');
+  assert.equal(tiles.maxZoom, 20);
+  assert.match(tiles.attribution, /CARTO/);
+  assert.match(tiles.attribution, /OpenStreetMap/);
+});
+
+test('tileSource accepte un fournisseur personnalisé et garde une attribution', () => {
+  const { resolveTileSource } = loadTileSource();
+  const custom = resolveTileSource({ url: ' https://example.org/tiles/{z}/{x}/{y}.png ' });
+  assert.equal(custom.name, 'custom');
+  assert.equal(custom.url, 'https://example.org/tiles/{z}/{x}/{y}.png');
+  assert.equal(custom.subdomains, 'abc');
+  assert.match(custom.attribution, /OpenStreetMap/);
+  assert.equal(custom.credit, 'tuiles personnalisées');
+
+  const detailed = resolveTileSource({
+    url: 'https://example.org/{z}/{x}/{y}.png',
+    attribution: '&copy; Fournisseur',
+    subdomains: 'abcd',
+    credit: 'Fournisseur',
+    cartoKey: 'ignorée',
+  });
+  assert.equal(detailed.attribution, '&copy; Fournisseur');
+  assert.equal(detailed.subdomains, 'abcd');
+  assert.equal(detailed.credit, 'Fournisseur');
+});
+
+test('tileSource expose un User-Agent identifiable pour la Tile Usage Policy OSM', () => {
+  const { TILE_USER_AGENT } = loadTileSource();
+  assert.match(TILE_USER_AGENT, /Doggo/);
+  assert.equal(typeof TILE_USER_AGENT, 'string');
+});
+
+
+// ============ GoogleDoggoMap : Google uniquement si une clé est configurée ============
+
+function collectTypes(node, out = []) {
+  if (Array.isArray(node)) { node.forEach((n) => collectTypes(n, out)); return out; }
+  if (typeof node === 'string') { out.push(node); return out; }
+  if (node && typeof node === 'object' && 'type' in node) {
+    out.push(node.type);
+    collectTypes(node.children, out);
+  }
+  return out;
+}
+
+function findTestIds(node, out = []) {
+  if (Array.isArray(node)) { node.forEach((n) => findTestIds(n, out)); return out; }
+  if (node && typeof node === 'object') {
+    if (node.props && node.props.testID) out.push(node.props.testID);
+    findTestIds(node.children, out);
+  }
+  return out;
+}
+
+/** Exécute le vrai composant avec un React minimal (pas de rendu DOM nécessaire). */
+function renderGoogleMap({ platform = 'ios', extra = {}, env = {} } = {}) {
+  const saved = { ...process.env };
+  for (const key of ['EXPO_PUBLIC_GOOGLE_MAPS_BROWSER_KEY', 'EXPO_PUBLIC_TILE_URL', 'EXPO_PUBLIC_CARTO_API_KEY']) {
+    delete process.env[key];
+  }
+  Object.assign(process.env, env);
+  try {
+    const element = (type, props, ...children) => ({ type, props: props || {}, children: children.flat(Infinity) });
+    const reactStub = {
+      __esModule: true,
+      useState: (init) => [typeof init === 'function' ? init() : init, () => {}],
+      useMemo: (fn) => fn(),
+      useCallback: (fn) => fn,
+      useRef: (value) => ({ current: value }),
+      useEffect: () => {},
+    };
+    reactStub.default = { createElement: element, Fragment: 'Fragment' };
+    const srcDir = path.join(__dirname, '../src');
+    const loader = makeLoader({
+      react: reactStub,
+      'react-native': {
+        View: 'View', Text: 'Text', Pressable: 'Pressable', ActivityIndicator: 'ActivityIndicator',
+        StyleSheet: { create: (styles) => styles },
+        Platform: { OS: platform },
+        Linking: { openURL: () => {} },
+      },
+      'expo-constants': {
+        __esModule: true,
+        default: { expoConfig: { extra }, executionEnvironment: 'bare' },
+        ExecutionEnvironment: { Bare: 'bare', Standalone: 'standalone', StoreClient: 'storeClient' },
+      },
+      './HostedMap': { __esModule: true, default: 'HostedMap' },
+      './NativeGoogleMap': { __esModule: true, default: 'NativeGoogleMap' },
+    });
+    const mod = loader.load(path.join(srcDir, 'GoogleDoggoMap.tsx'));
+    const tree = mod.GoogleDoggoMap({ fallback: 'OSM_FALLBACK', testID: 'map' });
+    return { types: collectTypes(tree), testIds: findTestIds(tree) };
+  } finally {
+    for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
+    Object.assign(process.env, saved);
+  }
+}
+
+test('GoogleDoggoMap affiche directement le fond OpenStreetMap sans aucune clé Google', () => {
+  const { types, testIds } = renderGoogleMap({ platform: 'ios', extra: { backendUrl: 'http://192.168.1.50:8000' } });
+  assert.deepEqual(types.filter((t) => t === 'HostedMap' || t === 'NativeGoogleMap'), []);
+  assert.equal(types.includes('OSM_FALLBACK'), true);
+  assert.equal(testIds.includes('map-fallback-notice'), true);
+});
+
+test('GoogleDoggoMap bascule sur OpenStreetMap en Expo Go Android sans clé native', () => {
+  const { types } = renderGoogleMap({ platform: 'android', extra: { googleNativeAndroid: false, googleBrowser: false } });
+  assert.equal(types.includes('OSM_FALLBACK'), true);
+  assert.deepEqual(types.filter((t) => t === 'HostedMap' || t === 'NativeGoogleMap'), []);
+});
+
+test('GoogleDoggoMap garde Google Maps JS quand la clé browser est configurée', () => {
+  const { types } = renderGoogleMap({ platform: 'ios', extra: { googleBrowser: true, backendUrl: 'http://192.168.1.50:8000' } });
+  assert.equal(types.includes('HostedMap'), true);
+  assert.equal(types.includes('OSM_FALLBACK'), false);
+});
+
+test('GoogleDoggoMap garde le SDK Google natif quand la clé native est configurée', () => {
+  const { types } = renderGoogleMap({ platform: 'android', extra: { googleNativeAndroid: true } });
+  assert.equal(types.includes('NativeGoogleMap'), true);
+  assert.equal(types.includes('OSM_FALLBACK'), false);
+});
+
 async function run() {
   let passed = 0;
   const failures = [];

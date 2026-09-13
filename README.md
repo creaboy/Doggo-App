@@ -132,9 +132,52 @@ Vous pouvez également créer un nouveau compte directement depuis l'écran de c
 
 ## 🗺️ Cartographie et Routage
 
-- **Fond de carte :** Par défaut, l'application fonctionne avec OpenStreetMap / CARTO / Leaflet sans nécessiter de clé API payante.
+### Fond de carte par défaut : OpenStreetMap / Leaflet (gratuit, sans clé)
+
+Sur iOS, Android et Web, la carte s'affiche directement avec **OpenStreetMap + Leaflet**
+(tuiles officielles `tile.openstreetmap.org`) : **aucune clé API, aucun compte, aucune
+facturation**. Les commerces, restaurants, parcs et points d'eau sont affichés par les tuiles.
+
+Si aucune clé Google Maps n'est configurée, l'application n'essaie même pas de charger
+Google Maps : plus d'écran « Google Maps est indisponible », la carte s'affiche tout de suite.
+
+**Envie d'un rendu encore plus proche de Google Maps (plus épuré) ?** Demandez une clé CARTO
+**gratuite et sans compte** sur <https://carto.com/basemaps/apikey>, puis renseignez-la dans
+`frontend/.env` :
+
+```bash
+EXPO_PUBLIC_CARTO_API_KEY=votre_cle_carto
+```
+
+Le style **CARTO Voyager** (équivalent visuel de Google Maps : fond clair, routes douces,
+commerces étiquetés) sera utilisé à la place. La clé est aussi ce qui supprime le filigrane
+« API key required » désormais appliqué par CARTO sur ses tuiles.
+
+Vous pouvez aussi imposer n'importe quel fournisseur de tuiles XYZ compatible Leaflet :
+
+```bash
+EXPO_PUBLIC_TILE_URL=https://{s}.exemple.com/tiles/{z}/{x}/{y}.png
+EXPO_PUBLIC_TILE_ATTRIBUTION=&copy; OpenStreetMap
+EXPO_PUBLIC_TILE_SUBDOMAINS=abcd
+```
+
+### Routage
+
 - **Routage et accrochage de parcours (Snap) :** Les calculs d'itinéraires piétons utilisent le moteur OSRM public d'OpenStreetMap.
-- **Google Maps (optionnel) :** Si vous possédez une clé API Google Maps, vous pouvez la renseigner dans les variables d'environnement (`EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_KEY`, `EXPO_PUBLIC_GOOGLE_MAPS_IOS_KEY`, `GOOGLE_MAPS_BROWSER_KEY`).
+
+### Google Maps (100 % optionnel)
+
+Si vous possédez un projet Google Cloud avec l'API Maps activée, renseignez :
+
+| Variable | Fichier | Rôle |
+| --- | --- | --- |
+| `EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_KEY` | `frontend/.env` | SDK natif Android (nécessite un *development build*, pas Expo Go) |
+| `EXPO_PUBLIC_GOOGLE_MAPS_IOS_KEY` | `frontend/.env` | SDK natif iOS (nécessite un *development build*, pas Expo Go) |
+| `EXPO_PUBLIC_GOOGLE_MAPS_BROWSER_KEY` | `frontend/.env` | Carte Google Maps JS affichée dans la WebView (Expo Go compris) |
+| `GOOGLE_MAPS_BROWSER_KEY` | `backend/.env` | Même clé « Browser », injectée par le backend dans `/api/maps/view` |
+
+Tant que ces variables sont vides, OpenStreetMap est utilisé. La bascule vers OpenStreetMap
+reste automatique si Google Maps ne répond pas (clé invalide, facturation coupée, réseau).
 
 ---
 
@@ -154,7 +197,9 @@ Doggo-App/
 │   │   └── walk/[id].tsx     # Fiche détaillée d'une balade
 │   ├── src/                  # Composants, Hooks et Contexte
 │   │   ├── AuthContext.tsx   # Gestion de la session utilisateur
-│   │   ├── DoggoMap.tsx      # Composant carte interactif
+│   │   ├── DoggoMap.tsx      # Composant carte interactif (Leaflet / OpenStreetMap)
+│   │   ├── GoogleDoggoMap.tsx # Utilise Google Maps uniquement si une clé est configurée
+│   │   ├── tileSource.ts     # Choix du fond de carte OSM (tuiles officielles ou CARTO)
 │   │   ├── useRouteRecorder.ts # Enregistrement GPS en direct
 │   │   └── api.ts            # Client HTTP API
 │   ├── app.json              # Configuration Expo (Nom, Bundle ID, Permissions)
