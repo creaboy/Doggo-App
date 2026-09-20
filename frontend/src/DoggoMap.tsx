@@ -111,6 +111,7 @@ function buildHtml(
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@2.4.0/dist/maplibre-gl.css" />
 <style>html,body,#m{margin:0;padding:0;height:100%;width:100%;background:#F1F4EE;}
 .pin{width:22px;height:22px;border-radius:50%;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.4);box-sizing:border-box;cursor:pointer;}
+.dogpin{width:32px;height:32px;border-radius:50%;background:#fff;border:3px solid #999;box-shadow:0 2px 6px rgba(0,0,0,0.4);box-sizing:border-box;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:17px;line-height:1;}
 .cluster{min-width:28px;height:28px;padding:0 7px;border-radius:14px;background:#2D6AE8;color:#fff;font:700 13px/1 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;text-align:center;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.45);box-sizing:border-box;cursor:pointer;display:flex;align-items:center;justify-content:center;}
 .userdot{width:20px;height:20px;border-radius:50%;border:3px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,0.4);box-sizing:border-box;}
 .mapboxgl-ctrl-attrib{background:rgba(255,255,255,0.72);font-size:10px;}
@@ -190,7 +191,7 @@ function buildHtml(
     (data.markers || []).forEach(function(m){
       var el=document.createElement('div');
       if(m.count && m.count>1){ el.className='cluster'; el.textContent=String(m.count); }
-      else { el.className='pin'; el.style.background=(m.color||COLORS.brand); if(m.label) el.title=m.label; }
+      else { el.className='dogpin'; el.style.borderColor=(m.color||COLORS.brand); el.textContent='🐶'; if(m.label) el.title=m.label; }
       var mk=new maplibregl.Marker({element:el,anchor:'center'}).setLngLat([m.coordinate.longitude,m.coordinate.latitude]).addTo(map);
       el.addEventListener('click',function(ev){ev.stopPropagation();post({type:'markerPress',id:m.id});});
       markerObjs.push(mk);
@@ -305,8 +306,8 @@ function buildHtml(
           if(data.segmentEditable){ var hit=L.polyline(pts,{weight:44,opacity:0}).addTo(mapL); hit.on('click',function(e){L.DomEvent.stopPropagation(e);post({type:'segmentPress',index:index,lat:e.latlng.lat,lng:e.latlng.lng});}); layers.push(hit); } });
         (data.markers||[]).forEach(function(m){
           var isCluster=m.count&&m.count>1;
-          var el=isCluster?('<div class="cluster">'+m.count+'</div>'):('<div class="pin" style="background:'+(m.color||COLORS.brand)+'"></div>');
-          var mk=L.marker([m.coordinate.latitude,m.coordinate.longitude],{icon:L.divIcon({html:el,iconSize:isCluster?[28,28]:[22,22],iconAnchor:isCluster?[14,14]:[11,11],className:''})}).addTo(mapL);
+          var el=isCluster?('<div class="cluster">'+m.count+'</div>'):('<div class="dogpin" style="border-color:'+(m.color||COLORS.brand)+'">🐶</div>');
+          var mk=L.marker([m.coordinate.latitude,m.coordinate.longitude],{icon:L.divIcon({html:el,iconSize:isCluster?[28,28]:[32,32],iconAnchor:isCluster?[14,14]:[16,16],className:''})}).addTo(mapL);
           mk.on('click',function(){post({type:'markerPress',id:m.id});}); layers.push(mk); });
       };
       var userMarker=null, accuracyCircle=null, focusIdL, mapFocusIdL;
@@ -515,7 +516,7 @@ const WebMapLibreImpl: React.FC<Props> = (props) => {
     (data.markers || []).forEach((m) => {
       const el = document.createElement("div");
       if (m.count && m.count > 1) { el.className = "cluster"; el.textContent = String(m.count); }
-      else { el.className = "pin"; el.style.background = m.color || colors.brandPrimary; if (m.label) el.title = m.label; }
+      else { el.className = "dogpin"; el.style.borderColor = m.color || colors.brandPrimary; el.textContent = "🐶"; if (m.label) el.title = m.label; }
       const mk = new (window as any).maplibregl.Marker({ element: el, anchor: "center" }).setLngLat([m.coordinate.longitude, m.coordinate.latitude]).addTo(map);
       el.addEventListener("click", (ev) => { ev.stopPropagation(); m.onPress?.(); });
       markersRef.current.push(mk);
@@ -630,8 +631,8 @@ const WebLeafletImpl: React.FC<Props> = (props) => {
     });
     props.markers?.forEach((m) => {
       const isCluster = !!(m.count && m.count > 1);
-      const html = isCluster ? `<div class="cluster">${m.count}</div>` : `<div class="pin" style="background:${m.color || colors.brandPrimary}"></div>`;
-      layersRef.current.push(L.marker([m.coordinate.latitude, m.coordinate.longitude], { icon: L.divIcon({ html, iconSize: isCluster ? [28, 28] : [22, 22], iconAnchor: isCluster ? [14, 14] : [11, 11], className: "" }) }).addTo(map));
+      const html = isCluster ? `<div class="cluster">${m.count}</div>` : `<div class="dogpin" style="border-color:${m.color || colors.brandPrimary}">🐶</div>`;
+      layersRef.current.push(L.marker([m.coordinate.latitude, m.coordinate.longitude], { icon: L.divIcon({ html, iconSize: isCluster ? [28, 28] : [32, 32], iconAnchor: isCluster ? [14, 14] : [16, 16], className: "" }) }).addTo(map));
     });
   }, [props.segments, props.markers, props.selectedSegmentIndex]);
   return (

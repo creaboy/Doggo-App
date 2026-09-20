@@ -25,6 +25,7 @@ export default function Root({ children }: PropsWithChildren) {
               [role="tablist"] [role="tab"] * { overflow: visible !important; }
               [role="heading"], [role="heading"] * { overflow: visible !important; }
               .pin { width: 22px; height: 22px; border-radius: 50%; border: 3px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.4); box-sizing: border-box; cursor: pointer; }
+              .dogpin { width: 32px; height: 32px; border-radius: 50%; background: #fff; border: 3px solid #999; box-shadow: 0 2px 6px rgba(0,0,0,0.4); box-sizing: border-box; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 17px; line-height: 1; }
               .cluster { min-width: 28px; height: 28px; padding: 0 7px; border-radius: 14px; background: #2D6AE8; color: #fff; font: 700 13px/1 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; text-align: center; border: 2px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.45); box-sizing: border-box; cursor: pointer; display: flex; align-items: center; justify-content: center; }
               .userdot { width: 20px; height: 20px; border-radius: 50%; border: 3px solid #fff; box-shadow: 0 1px 5px rgba(0,0,0,0.4); box-sizing: border-box; }
             `,
