@@ -21,7 +21,7 @@ function styleEnv() {
 // Types
 export type LatLng = { latitude: number; longitude: number };
 export type SegmentInput = { coordinates: LatLng[]; freedom: "free" | "caution" | "leash"; generated?: boolean; pending?: boolean };
-export type MarkerInput = { id: string; coordinate: LatLng; color?: string; label?: string; count?: number; onPress?: () => void };
+export type MarkerInput = { id: string; coordinate: LatLng; color?: string; label?: string; count?: number; waypoint?: number; onPress?: () => void };
 
 const freedomColor: Record<string, string> = {
   free: colors.success,
@@ -45,6 +45,7 @@ export type MapProps = {
   locationFocus?: { id: number; coordinate: LatLng };
   onSegmentPress?: (index: number, coordinate?: LatLng) => void;
   selectedSegmentIndex?: number;
+  onLongPress?: (c: LatLng) => void;
   onRegionChange?: (region: { latitude: number; longitude: number; latitudeDelta: number; longitudeDelta: number; zoom: number }) => void;
   mapFocus?: { id: number; coordinate: LatLng; zoom: number };
 };
@@ -116,6 +117,7 @@ function buildHtml(
 .pin{width:22px;height:22px;border-radius:50%;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.4);box-sizing:border-box;cursor:pointer;}
 .dogpin{width:32px;height:32px;border-radius:50%;background:#fff;border:3px solid #999;box-shadow:0 2px 6px rgba(0,0,0,0.4);box-sizing:border-box;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#374151;}
 .dogpin svg{width:19px;height:19px;fill:currentColor;display:block;}
+.wpin{min-width:26px;height:26px;padding:0 5px;border-radius:13px;background:#fff;color:#1f2937;border:3px solid #2D6AE8;box-shadow:0 2px 6px rgba(0,0,0,0.4);box-sizing:border-box;cursor:pointer;display:flex;align-items:center;justify-content:center;font:700 13px/1 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;}
 .cluster{min-width:28px;height:28px;padding:0 7px;border-radius:14px;background:#2D6AE8;color:#fff;font:700 13px/1 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;text-align:center;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.45);box-sizing:border-box;cursor:pointer;display:flex;align-items:center;justify-content:center;}
 .userdot{width:20px;height:20px;border-radius:50%;border:3px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,0.4);box-sizing:border-box;}
 .mapboxgl-ctrl-attrib{background:rgba(255,255,255,0.72);font-size:10px;}
@@ -195,7 +197,8 @@ function buildHtml(
     });
     (data.markers || []).forEach(function(m){
       var el=document.createElement('div');
-      if(m.count && m.count>1){ el.className='cluster'; el.textContent=String(m.count); }
+      if(m.waypoint!=null){ el.className='wpin'; el.textContent=String(m.waypoint); if(m.label) el.title=m.label; }
+      else if(m.count && m.count>1){ el.className='cluster'; el.textContent=String(m.count); }
       else { el.className='dogpin'; var c=m.color||COLORS.brand; el.style.borderColor=c; el.style.color=c; el.innerHTML=PAW; if(m.label) el.title=m.label; }
       var mk=new maplibregl.Marker({element:el,anchor:'center'}).setLngLat([m.coordinate.longitude,m.coordinate.latitude]).addTo(map);
       el.addEventListener('click',function(ev){ev.stopPropagation();post({type:'markerPress',id:m.id});});
@@ -280,6 +283,7 @@ function buildHtml(
     map.addControl(new maplibregl.NavigationControl({showCompass:false}),'top-left');
     map.addControl(new maplibregl.AttributionControl({compact:true}));
     map.on('click', function(e){ if(e.lngLat) post({type:'press',lat:e.lngLat.lat,lng:e.lngLat.lng}); });
+    map.on('contextmenu', function(e){ if(e.lngLat) post({type:'longpress',lat:e.lngLat.lat,lng:e.lngLat.lng}); });
     map.on('moveend', function(){ postRegion(map); });
     map.on('load', function(){
       loadedFlag=true;
@@ -318,6 +322,7 @@ function buildHtml(
       };
       var userMarker=null, accuracyCircle=null, focusIdL, mapFocusIdL;
       mapL.on('moveend', function(){ try{ var b=mapL.getBounds(); var sw=b.getSouthWest(); var ne=b.getNorthEast(); var c=mapL.getCenter(); post({type:'region',latitude:c.lat,longitude:c.lng,latitudeDelta:ne.lat-sw.lat,longitudeDelta:ne.lng-sw.lng,zoom:mapL.getZoom()}); }catch(e){} });
+      mapL.on('contextmenu', function(e){ post({type:'longpress',lat:e.latlng.lat,lng:e.latlng.lng}); });
       window.__setUserLocation=function(data){
         if(data.userCoordinate){
           var p=[data.userCoordinate.latitude,data.userCoordinate.longitude];
@@ -394,6 +399,8 @@ const NativeMapImpl: React.FC<Props> = (props) => {
       if (m?.onPress) m.onPress();
     } else if (msg.type === "region" && props.onRegionChange) {
       props.onRegionChange({ latitude: msg.latitude, longitude: msg.longitude, latitudeDelta: msg.latitudeDelta, longitudeDelta: msg.longitudeDelta, zoom: msg.zoom });
+    } else if (msg.type === "longpress" && props.onLongPress) {
+      props.onLongPress({ latitude: msg.lat, longitude: msg.lng });
     }
   };
 
@@ -521,7 +528,8 @@ const WebMapLibreImpl: React.FC<Props> = (props) => {
     });
     (data.markers || []).forEach((m) => {
       const el = document.createElement("div");
-      if (m.count && m.count > 1) { el.className = "cluster"; el.textContent = String(m.count); }
+      if (m.waypoint != null) { el.className = "wpin"; el.textContent = String(m.waypoint); if (m.label) el.title = m.label; }
+      else if (m.count && m.count > 1) { el.className = "cluster"; el.textContent = String(m.count); }
       else { const c = m.color || colors.brandPrimary; el.className = "dogpin"; el.style.borderColor = c; el.style.color = c; el.innerHTML = PAW_SVG; if (m.label) el.title = m.label; }
       const mk = new (window as any).maplibregl.Marker({ element: el, anchor: "center" }).setLngLat([m.coordinate.longitude, m.coordinate.latitude]).addTo(map);
       el.addEventListener("click", (ev) => { ev.stopPropagation(); m.onPress?.(); });
@@ -583,6 +591,7 @@ const WebMapLibreImpl: React.FC<Props> = (props) => {
       map.on("click", (e: any) => { if (e.lngLat) latestProps.current.onPress?.({ latitude: e.lngLat.lat, longitude: e.lngLat.lng }); });
       const emitRegion = () => { try { const b = map.getBounds(); const sw = b.getSouthWest(); const ne = b.getNorthEast(); const c = map.getCenter(); latestProps.current.onRegionChange?.({ latitude: c.lat, longitude: c.lng, latitudeDelta: ne.lat - sw.lat, longitudeDelta: ne.lng - sw.lng, zoom: map.getZoom() }); } catch {} };
       map.on("moveend", emitRegion);
+      map.on("contextmenu", (e: any) => { if (e.lngLat) latestProps.current.onLongPress?.({ latitude: e.lngLat.lat, longitude: e.lngLat.lng }); });
       map.on("load", () => { applyGooglePalette(map); renderLayers(); renderLocation(); emitRegion(); });
       mapRef.current = map;
     }).catch(() => {});
@@ -622,6 +631,7 @@ const WebLeafletImpl: React.FC<Props> = (props) => {
       L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "&copy; OpenStreetMap" }).addTo(map);
       map.on("click", (e: any) => { latestProps.current.onPress?.({ latitude: e.latlng.lat, longitude: e.latlng.lng }); });
       map.on("moveend", () => { try { const b = map.getBounds(); const sw = b.getSouthWest(); const ne = b.getNorthEast(); const c = map.getCenter(); latestProps.current.onRegionChange?.({ latitude: c.lat, longitude: c.lng, latitudeDelta: ne.lat - sw.lat, longitudeDelta: ne.lng - sw.lng, zoom: map.getZoom() }); } catch {} });
+      map.on("contextmenu", (e: any) => { latestProps.current.onLongPress?.({ latitude: e.latlng.lat, longitude: e.latlng.lng }); });
       mapRef.current = map;
     }).catch(() => {});
     return () => { cancelled = true; if (mapRef.current) { try { mapRef.current.remove(); } catch {} mapRef.current = null; } };
@@ -638,7 +648,7 @@ const WebLeafletImpl: React.FC<Props> = (props) => {
     props.markers?.forEach((m) => {
       const isCluster = !!(m.count && m.count > 1);
       const c = m.color || colors.brandPrimary;
-      const html = isCluster ? `<div class="cluster">${m.count}</div>` : `<div class="dogpin" style="border-color:${c};color:${c}">${PAW_SVG}</div>`;
+      const html = m.waypoint != null ? `<div class="wpin">${m.waypoint}</div>` : isCluster ? `<div class="cluster">${m.count}</div>` : `<div class="dogpin" style="border-color:${c};color:${c}">${PAW_SVG}</div>`;
       layersRef.current.push(L.marker([m.coordinate.latitude, m.coordinate.longitude], { icon: L.divIcon({ html, iconSize: isCluster ? [28, 28] : [32, 32], iconAnchor: isCluster ? [14, 14] : [16, 16], className: "" }) }).addTo(map));
     });
   }, [props.segments, props.markers, props.selectedSegmentIndex]);

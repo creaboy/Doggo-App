@@ -25,6 +25,7 @@ export default function WalkDetail() {
   const [posting, setPosting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [hazardOpen, setHazardOpen] = useState(false);
+  const [hazardAt, setHazardAt] = useState<{ latitude: number; longitude: number } | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
   const showToast = (msg: string) => {
@@ -162,8 +163,10 @@ export default function WalkDetail() {
         </View>
 
         <View style={styles.mapWrap}>
-          <DoggoMap testID="walk-detail-map" initialRegion={region} segments={segments} markers={markers} fitToRoute style={{ flex: 1 }} />
+          <DoggoMap testID="walk-detail-map" initialRegion={region} segments={segments} markers={markers} fitToRoute style={{ flex: 1 }}
+            onLongPress={(c) => { if (!user) { router.push("/auth/login"); return; } setHazardAt(c); setHazardOpen(true); }} />
         </View>
+        <Text style={styles.hintLongPress}>Maintenez le doigt appuyé sur la carte pour signaler un danger à cet endroit (chenilles, animal, route…).</Text>
 
         <LegendRow />
 
@@ -188,7 +191,7 @@ export default function WalkDetail() {
           ))}
         </View>
 
-        <SectionHeader title={`Dangers (${hazards.length})`} action={{ label: "+ Ajouter", onPress: () => user ? setHazardOpen(true) : router.push("/auth/login"), testID: "add-hazard" }} />
+        <SectionHeader title={`Dangers (${hazards.length})`} action={{ label: "+ Ajouter", onPress: () => user ? (setHazardAt(null), setHazardOpen(true)) : router.push("/auth/login"), testID: "add-hazard" }} />
         <View style={styles.list}>
           {hazards.length === 0 ? <Text style={styles.emptyText}>Aucun danger signalé.</Text> : hazards.map((h: any) => (
             <View key={h.id} style={styles.hazardRow} testID={`hazard-${h.id}`}>
@@ -250,7 +253,8 @@ export default function WalkDetail() {
       </ScrollView>
 
       <ConfirmModal open={confirmOpen} onClose={() => setConfirmOpen(false)} onAccurate={confirmAccurate} onChange={reportChange} />
-      <AddHazardModal open={hazardOpen} onClose={() => setHazardOpen(false)} walkId={walk.id} centerLat={walk.start_lat} centerLng={walk.start_lng} onDone={load} />
+      <AddHazardModal open={hazardOpen} onClose={() => { setHazardOpen(false); setHazardAt(null); }} walkId={walk.id}
+        centerLat={hazardAt?.latitude ?? walk.start_lat} centerLng={hazardAt?.longitude ?? walk.start_lng} onDone={load} />
       {toast && (
         <View pointerEvents="none" style={[styles.toast, { bottom: insets.bottom + spacing.xl }]} testID="share-toast">
           <Text style={styles.toastText}>{toast}</Text>
@@ -394,6 +398,7 @@ const styles = StyleSheet.create({
   statLabel: { fontSize: 11, color: colors.muted, marginTop: 2, textAlign: "center" },
   stripe: { width: 22, height: 4, borderRadius: 2 },
   mapWrap: { height: 320, marginTop: spacing.lg, marginHorizontal: spacing.md, borderRadius: radius.lg, overflow: "hidden", borderWidth: 1, borderColor: colors.border },
+  hintLongPress: { color: colors.muted, fontSize: 12, fontStyle: "italic", paddingHorizontal: spacing.lg, marginTop: spacing.sm },
   legendRow: { flexDirection: "row", gap: spacing.md, paddingHorizontal: spacing.lg, marginTop: spacing.sm },
   legendItem: { flexDirection: "row", alignItems: "center", gap: 6 },
   legendDot: { width: 12, height: 12, borderRadius: 6 },

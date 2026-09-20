@@ -60,7 +60,14 @@ export function regionFor(d: Draft) {
 export const formatMeters = (value: number) => value > 20 && value < 21 ? `${(Math.ceil(value * 10) / 10).toFixed(1)} m` : value < 1000 ? `${Math.round(value)} m` : `${(value / 1000).toFixed(2)} km`;
 export function routeMarkers(d: Draft) {
   if (!d.start) return [];
-  const end = lastPoint(d)!;
-  return [{ id: 'start', coordinate: d.start, label: closed(d) ? 'Départ / arrivée · boucle fermée' : 'Départ' },
-    ...(!closed(d) && d.legs.length ? [{ id: 'end', coordinate: end, label: 'Fin actuelle' }] : [])];
+  const pts = [{ id: 'wp-1', coordinate: d.start, waypoint: 1, label: 'Départ' }];
+  let n = 1;
+  for (const leg of d.legs) {
+    const end = leg.coordinates.at(-1);
+    if (!end) continue;
+    if (meters(end, d.start) < 0.001) continue; // boucle refermée : pas de doublon sur le départ
+    n += 1;
+    pts.push({ id: `wp-${n}`, coordinate: end, waypoint: n, label: `Point ${n}` });
+  }
+  return pts;
 }
