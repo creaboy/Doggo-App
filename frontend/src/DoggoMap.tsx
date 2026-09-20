@@ -113,11 +113,9 @@ function buildHtml(
 .mapboxgl-ctrl-attrib{background:rgba(255,255,255,0.72);font-size:10px;}
 .mapboxgl-ctrl-group{border-radius:8px;}
 #fb{position:fixed;top:8px;left:50%;transform:translateX(-50%);background:rgba(20,20,20,0.6);color:#fff;font:11px -apple-system,"Segoe UI",Roboto,sans-serif;padding:3px 10px;border-radius:999px;z-index:9;pointer-events:none;}
-#diag{position:fixed;left:6px;bottom:6px;max-width:94%;background:rgba(0,0,0,0.78);color:#9f9;font:10px/1.45 ui-monospace,Menlo,Consolas,monospace;padding:5px 8px;border-radius:8px;z-index:9999;white-space:pre-wrap;pointer-events:none;transition:opacity .6s;}
 </style></head><body>
 <div id="m"></div>
-<div id="diag">init…</div>
-<script src="https://unpkg.com/maplibre-gl@2.4.0/dist/maplibre-gl.js" onerror="window.__mlFail=1"></script>
+<script src="https://unpkg.com/maplibre-gl@2.4.0/dist/maplibre-gl.js"></script>
 <script>
 (function(){
   var STYLE = ${JSON.stringify(style)};
@@ -135,22 +133,6 @@ function buildHtml(
   function post(obj){
     try { if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) window.ReactNativeWebView.postMessage(JSON.stringify(obj)); } catch(e){}
   }
-
-  // ---- Diagnostic visible à l'écran (pour comprendre pourquoi la carte ne s'affiche pas) ----
-  var diagEl = document.getElementById('diag');
-  function diag(msg){
-    if(!diagEl) diagEl = document.getElementById('diag');
-    if(!diagEl) return;
-    var lines = (diagEl.textContent||'').split('\\n');
-    if(lines.length && lines[lines.length-1]==='init…') lines = [];
-    lines.push(String(msg));
-    if(lines.length>8) lines = lines.slice(lines.length-8);
-    diagEl.textContent = lines.join('\\n');
-    diagEl.style.opacity = '1';
-  }
-  function diagHide(){ setTimeout(function(){ if(diagEl) diagEl.style.opacity='0'; }, 4500); }
-  window.onerror = function(m){ if(m && String(m).indexOf('Script error')===0) return false; diag('JS err: '+m); return false; };
-  diag('WebView OK');
 
   function circle(c, r){
     var pts=[], steps=48;
@@ -213,16 +195,22 @@ function buildHtml(
     if(data.userCoordinate){
       var p=[data.userCoordinate.longitude,data.userCoordinate.latitude];
       var color=data.locationStale?COLORS.muted:COLORS.location;
-      if(!userDotEl){ userDotEl=document.createElement('div'); userDotEl.className='userdot';
-        userDot=new maplibregl.Marker({element:userDotEl,anchor:'center'}).addTo(map); }
-      userDot.setLngLat(p); userDotEl.style.background=color;
-      if(!accAdded){ map.addSource('doggo-acc',{type:'geojson',data:EMPTY});
-        map.addLayer({id:'doggo-acc-fill',type:'fill',source:'doggo-acc',paint:{'fill-color':color,'fill-opacity':0.09}});
-        map.addLayer({id:'doggo-acc-line',type:'line',source:'doggo-acc',paint:{'line-color':color,'line-opacity':0.2,'line-width':1}});
-        accAdded=true; }
-      map.getSource('doggo-acc').setData(circle(data.userCoordinate, data.userAccuracy||0));
+      if(!userDot){
+        try{
+          userDotEl=document.createElement('div'); userDotEl.className='userdot';
+          userDot=new maplibregl.Marker({element:userDotEl,anchor:'center'}).setLngLat(p).addTo(map);
+        }catch(e){ userDot=null; userDotEl=null; }
+      }
+      if(userDot){ try{ userDot.setLngLat(p); }catch(e){} if(userDotEl) userDotEl.style.background=color; }
+      try{
+        if(!accAdded){ map.addSource('doggo-acc',{type:'geojson',data:EMPTY});
+          map.addLayer({id:'doggo-acc-fill',type:'fill',source:'doggo-acc',paint:{'fill-color':color,'fill-opacity':0.09}});
+          map.addLayer({id:'doggo-acc-line',type:'line',source:'doggo-acc',paint:{'line-color':color,'line-opacity':0.2,'line-width':1}});
+          accAdded=true; }
+        var acc=map.getSource('doggo-acc'); if(acc) acc.setData(circle(data.userCoordinate, data.userAccuracy||0));
+      }catch(e){}
     } else {
-      if(userDot){ userDot.remove(); userDot=null; userDotEl=null; }
+      if(userDot){ try{ userDot.remove(); }catch(e){} userDot=null; userDotEl=null; }
       if(accAdded && map.getSource('doggo-acc')) map.getSource('doggo-acc').setData(EMPTY);
     }
     if(data.locationFocus && data.locationFocus.id!==focusId){ focusId=data.locationFocus.id; var c=data.locationFocus.coordinate; map.flyTo({center:[c.longitude,c.latitude],zoom:17}); }
@@ -256,18 +244,15 @@ function buildHtml(
   function startMapLibre(){
     var loadedFlag=false;
     try {
-      diag('MapLibre: création…');
       map = new maplibregl.Map({ container:'m', style: STYLE.styleUrl, center: CENTER, zoom: ZOOM,
         attributionControl:false });
     } catch(e){
-      diag('MapLibre init ERREUR: '+(e && e.message || e));
       startLeaflet(); return;
     }
     // Si la carte ne charge pas (style/tuiles injoignables), repli Leaflet au lieu d'un écran vide.
     setTimeout(function(){
       if(!loadedFlag && !window.__doggoFellBack){
         window.__doggoFellBack=true;
-        diag('⏱ 8s sans style → repli Leaflet/OSM');
         try{ map.remove(); }catch(e){}
         map=null;
         startLeaflet();
@@ -275,13 +260,10 @@ function buildHtml(
     }, 8000);
     map.addControl(new maplibregl.NavigationControl({showCompass:false}),'top-left');
     map.addControl(new maplibregl.AttributionControl({compact:true}));
-    map.on('error', function(e){ diag('MapLibre err: '+((e&&e.error&&e.error.message)||(e&&e.message)||'?')); });
     map.on('click', function(e){ if(e.lngLat) post({type:'press',lat:e.lngLat.lat,lng:e.lngLat.lng}); });
     map.on('load', function(){
       loadedFlag=true;
       googlePalette(map);
-      diag('✔ Carte Liberty chargée (MapLibre)');
-      diagHide();
       post({type:'ready'});
       if(window.__pendingData){ var d=window.__pendingData; window.__pendingData=null; window.__renderData(d); }
       if(window.__pendingLocation){ var l=window.__pendingLocation; window.__pendingLocation=null; window.__setUserLocation(l); }
@@ -291,16 +273,13 @@ function buildHtml(
   // Repli Leaflet si WebGL/MapLibre indisponible.
   function startLeaflet(){
     window.__doggoFellBack=true;
-    diag('Leaflet: chargement…');
     var b=document.createElement('div'); b.id='fb'; b.textContent='Rendu raster · WebGL indisponible'; document.body.appendChild(b);
     var css=document.createElement('link'); css.rel='stylesheet'; css.href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'; document.head.appendChild(css);
     var s=document.createElement('script'); s.src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-    s.onerror=function(){ diag('ERREUR: leaflet.js non chargé (réseau/CSP ?)'); };
     s.onload=function(){
       var mapL=L.map('m',{zoomControl:true,attributionControl:true,zoomSnap:0,zoomDelta:0.5}).setView([${region.latitude},${region.longitude}],ZOOM);
       if(mapL.attributionControl) mapL.attributionControl.setPrefix(false);
       L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap'}).addTo(mapL);
-      diag('✔ OSM raster affiché (Leaflet)'); diagHide();
       var layers=[];
       window.__renderData=function(data){
         layers.forEach(function(l){mapL.removeLayer(l);}); layers=[];
@@ -340,9 +319,8 @@ function buildHtml(
   }
 
   var hasML=!!window.maplibregl, sup=false;
-  if(!hasML){ diag('maplibre-gl.js NON chargé'+(window.__mlFail?' (erreur réseau)':'')); }
-  else { try{ sup=!!(maplibregl.supported&&maplibregl.supported()); diag('maplibregl OK · WebGL='+sup); }catch(e){ diag('supported() err: '+(e&&e.message||e)); } }
-  if(hasML && sup){ startMapLibre(); } else { diag(hasML?'WebGL indisponible → Leaflet':'→ Leaflet (maplibre absent)'); startLeaflet(); }
+  if(hasML){ try{ sup=!!(maplibregl.supported&&maplibregl.supported()); }catch(e){ sup=false; } }
+  if(hasML && sup){ startMapLibre(); } else { startLeaflet(); }
 })();
 </script>
 </body></html>`;
