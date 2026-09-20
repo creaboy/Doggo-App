@@ -106,7 +106,7 @@ function buildHtml(
   const zoom = calcZoom(region.latitudeDelta, region.longitudeDelta);
   return `<!doctype html><html><head>
 <meta name="viewport" content="initial-scale=1.0,maximum-scale=1.0,user-scalable=no" />
-<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@2.4.0/dist/maplibre-gl.css" />
 <style>html,body,#m{margin:0;padding:0;height:100%;width:100%;background:#F1F4EE;}
 .pin{width:22px;height:22px;border-radius:50%;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.4);box-sizing:border-box;cursor:pointer;}
 .userdot{width:20px;height:20px;border-radius:50%;border:3px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,0.4);box-sizing:border-box;}
@@ -115,7 +115,7 @@ function buildHtml(
 #fb{position:fixed;top:8px;left:50%;transform:translateX(-50%);background:rgba(20,20,20,0.6);color:#fff;font:11px -apple-system,"Segoe UI",Roboto,sans-serif;padding:3px 10px;border-radius:999px;z-index:9;pointer-events:none;}
 </style></head><body>
 <div id="m"></div>
-<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="https://unpkg.com/maplibre-gl@2.4.0/dist/maplibre-gl.js"></script>
 <script>
 (function(){
   var STYLE = ${JSON.stringify(style)};
@@ -236,11 +236,23 @@ function buildHtml(
   }
 
   function startMapLibre(){
+    var loadedFlag=false;
     map = new maplibregl.Map({ container:'m', style: STYLE.styleUrl, center: CENTER, zoom: ZOOM,
-      attributionControl:{compact:true} });
+      attributionControl:false });
+    // Si la carte ne charge pas (style/tuiles injoignables), repli Leaflet au lieu d'un écran vide.
+    setTimeout(function(){
+      if(!loadedFlag && !window.__doggoFellBack){
+        window.__doggoFellBack=true;
+        try{ map.remove(); }catch(e){}
+        map=null;
+        startLeaflet();
+      }
+    }, 8000);
     map.addControl(new maplibregl.NavigationControl({showCompass:false}),'top-left');
+    map.addControl(new maplibregl.AttributionControl({compact:true}));
     map.on('click', function(e){ if(e.lngLat) post({type:'press',lat:e.lngLat.lat,lng:e.lngLat.lng}); });
     map.on('load', function(){
+      loadedFlag=true;
       googlePalette(map);
       post({type:'ready'});
       if(window.__pendingData){ var d=window.__pendingData; window.__pendingData=null; window.__renderData(d); }
@@ -250,6 +262,7 @@ function buildHtml(
 
   // Repli Leaflet si WebGL/MapLibre indisponible.
   function startLeaflet(){
+    window.__doggoFellBack=true;
     var b=document.createElement('div'); b.id='fb'; b.textContent='Rendu raster · WebGL indisponible'; document.body.appendChild(b);
     var css=document.createElement('link'); css.rel='stylesheet'; css.href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'; document.head.appendChild(css);
     var s=document.createElement('script'); s.src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
@@ -384,11 +397,11 @@ function loadMapLibre(): Promise<any> {
     if (!doc.getElementById("maplibre-css")) {
       const link = doc.createElement("link");
       link.id = "maplibre-css"; link.rel = "stylesheet";
-      link.href = "https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css";
+      link.href = "https://unpkg.com/maplibre-gl@2.4.0/dist/maplibre-gl.css";
       doc.head.appendChild(link);
     }
     const s = doc.createElement("script");
-    s.src = "https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js";
+    s.src = "https://unpkg.com/maplibre-gl@2.4.0/dist/maplibre-gl.js";
     s.async = true;
     s.onload = () => resolve((window as any).maplibregl);
     s.onerror = (e) => reject(e);
@@ -518,8 +531,9 @@ const WebMapLibreImpl: React.FC<Props> = (props) => {
     loadMapLibre().then((mlgl) => {
       if (cancelled || !containerRef.current || mapRef.current) return;
       if (!(mlgl.supported && mlgl.supported())) return; // -> repli Leaflet géré par le parent
-      const map = new mlgl.Map({ container: containerRef.current, style: style.styleUrl, center: [region.longitude, region.latitude], zoom: calcZoom(region.latitudeDelta, region.longitudeDelta), attributionControl: { compact: true } });
+      const map = new mlgl.Map({ container: containerRef.current, style: style.styleUrl, center: [region.longitude, region.latitude], zoom: calcZoom(region.latitudeDelta, region.longitudeDelta), attributionControl: false });
       map.addControl(new mlgl.NavigationControl({ showCompass: false }), "top-left");
+      map.addControl(new mlgl.AttributionControl({ compact: true }));
       map.on("click", (e: any) => { if (e.lngLat) latestProps.current.onPress?.({ latitude: e.lngLat.lat, longitude: e.lngLat.lng }); });
       map.on("load", () => { applyGooglePalette(map); renderLayers(); renderLocation(); });
       mapRef.current = map;

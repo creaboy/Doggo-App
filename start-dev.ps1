@@ -43,7 +43,38 @@ if (-not $mongoRunning) {
         }
     } else {
         Write-Host " ⚠ MongoDB n'est pas détecté sur le port 27017 et Docker n'a pas été trouvé." -ForegroundColor DarkYellow
-        Write-Host "   Si vous utilisez MongoDB installé en local, assurez-vous que le service MongoDB tourne." -ForegroundColor DarkGray
+        # Tente de démarrer un mongod local (installation Windows classique).
+        $mongod = $null
+        if (Get-Command mongod -ErrorAction SilentlyContinue) { $mongod = (Get-Command mongod).Source }
+        else {
+            $candidates = @(
+                "C:\Program Files\MongoDB\Server\*\bin\mongod.exe",
+                "C:\Program Files\MongoDB\bin\mongod.exe",
+                "C:\MongoDB\bin\mongod.exe",
+                "D:\MongoDB\bin\mongod.exe",
+                "D:\MongoDB\Server\*\bin\mongod.exe"
+            )
+            foreach ($c in $candidates) {
+                $found = Get-Item $c -ErrorAction SilentlyContinue | Select-Object -First 1
+                if ($found) { $mongod = $found.FullName; break }
+            }
+        }
+        $dbpath = if ($env:MONGO_DBPATH) { $env:MONGO_DBPATH } elseif (Test-Path "D:\MongoDB\data") { "D:\MongoDB\data" } else { Join-Path $backendDir "data\db" }
+        if ($mongod) {
+            Write-Host " ℹ Démarrage de mongod local : $mongod (dbpath: $dbpath)" -ForegroundColor Cyan
+            if (-not (Test-Path $dbpath)) { New-Item -ItemType Directory -Path $dbpath -Force | Out-Null }
+            Start-Process -FilePath $mongod -ArgumentList "--dbpath `"$dbpath`" --bind_ip 127.0.0.1 --port 27017" -WindowStyle Hidden
+            Start-Sleep -Seconds 3
+            try {
+                $t2 = New-Object System.Net.Sockets.TcpClient
+                $t2.Connect("127.0.0.1", 27017); $t2.Close()
+                $mongoRunning = $true
+                Write-Host " ✔ MongoDB local démarré." -ForegroundColor Green
+            } catch { $null = $_ }
+        }
+        if (-not $mongoRunning) {
+            Write-Host "   Impossible de démarrer MongoDB automatiquement. Démarrez le service MongoDB puis relancez ce script." -ForegroundColor DarkGray
+        }
     }
 }
 
