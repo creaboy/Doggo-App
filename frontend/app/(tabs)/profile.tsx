@@ -29,9 +29,9 @@ export default function ProfileScreen() {
   if (!user) {
     return (
       <View style={[styles.center, { paddingTop: insets.top }]}>
-        <Text style={styles.title}>You're browsing as guest</Text>
+        <Text style={styles.title}>Vous naviguez en invité</Text>
         <Pressable testID="go-to-login" style={styles.primaryBtn} onPress={() => router.replace("/auth/login")}>
-          <Text style={styles.primaryBtnText}>Sign in</Text>
+          <Text style={styles.primaryBtnText}>Se connecter</Text>
         </Pressable>
       </View>
     );
@@ -53,20 +53,20 @@ export default function ProfileScreen() {
       </View>
 
       <View style={styles.statsRow}>
-        <StatBox label="Walks created" value={walks.length} />
-        <StatBox label="Ratings given" value={activity?.ratings.length ?? 0} />
-        <StatBox label="Comments" value={activity?.comments.length ?? 0} />
+        <StatBox label="Balades créées" value={walks.length} />
+        <StatBox label="Notes données" value={activity?.ratings.length ?? 0} />
+        <StatBox label="Commentaires" value={activity?.comments.length ?? 0} />
       </View>
 
-      <Text style={styles.section}>My walks</Text>
+      <Text style={styles.section}>Mes balades</Text>
       {loading ? (
         <ActivityIndicator color={colors.brandPrimary} style={{ marginTop: spacing.lg }} />
       ) : walks.length === 0 ? (
         <View style={styles.empty}>
           <PathIcon size={32} color={colors.muted} />
-          <Text style={styles.emptyText}>You haven't published any walks yet</Text>
+          <Text style={styles.emptyText}>Vous n'avez pas encore publié de balade</Text>
           <Pressable testID="go-create" style={styles.primaryBtn} onPress={() => router.push("/(tabs)/create")}>
-            <Text style={styles.primaryBtnText}>Create your first walk</Text>
+            <Text style={styles.primaryBtnText}>Créer votre première balade</Text>
           </Pressable>
         </View>
       ) : (
@@ -85,7 +85,7 @@ export default function ProfileScreen() {
 
       {activity?.comments.length ? (
         <>
-          <Text style={styles.section}>Recent comments</Text>
+          <Text style={styles.section}>Commentaires récents</Text>
           <View style={{ paddingHorizontal: spacing.md, gap: spacing.md }}>
             {activity.comments.slice(0, 5).map((c) => (
               <View key={c.id} style={styles.commentRow}>

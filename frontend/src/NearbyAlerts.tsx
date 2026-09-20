@@ -117,8 +117,8 @@ export function NearbyAlertsBanner() {
       >
         <View style={styles.iconBox}><Warning size={20} color="#fff" weight="fill" /></View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.title}>Hazard nearby: {hazardTypeLabels[current.type] || current.type}</Text>
-          <Text style={styles.sub} numberOfLines={1}>{current.walk_title} · tap to view</Text>
+          <Text style={styles.title}>Danger à proximité : {hazardTypeLabels[current.type] || current.type}</Text>
+          <Text style={styles.sub} numberOfLines={1}>{current.walk_title} · toucher pour voir</Text>
         </View>
         <Pressable testID="dismiss-alert" hitSlop={10} onPress={dismiss} style={styles.close}><X size={16} color="#fff" /></Pressable>
       </Pressable>

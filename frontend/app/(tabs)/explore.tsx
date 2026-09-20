@@ -1,11 +1,11 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator, RefreshControl, FlatList, Modal } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { Star, MapPin, Clock, TrendUp, X, SlidersHorizontal, List as ListIcon, MapTrifold, Heart, Sparkle } from "phosphor-react-native";
+import { Star, Clock, TrendUp, X, SlidersHorizontal, List as ListIcon, MapTrifold, Heart, Sparkle, MagnifyingGlass } from "phosphor-react-native";
 import { colors, radius, spacing } from "../../src/theme";
 import { api } from "../../src/api";
-import { DoggoMap } from "../../src/DoggoMap";
+import { DoggoMap, LatLng } from "../../src/DoggoMap";
 import { environmentLabels, difficultyLabels, freedomLabels, formatDuration, timeAgo, walkFreedomColor } from "../../src/labels";
 import { useFavorites } from "../../src/FavoritesContext";
 import { useAuth } from "../../src/AuthContext";
@@ -13,15 +13,45 @@ import { useUserLocation, distanceKm } from "../../src/useUserLocation";
 import { DigestModal } from "../../src/DigestModal";
 
 type Walk = any;
+type Viewport = { latitude: number; longitude: number; latitudeDelta: number; longitudeDelta: number; zoom: number };
 
 const ENV_OPTIONS = ["all", "forest", "fields", "city", "beach", "mountain", "mixed"];
 const DIFF_OPTIONS = ["all", "easy", "moderate", "sporty"];
 const FREE_OPTIONS = ["all", "free", "partial", "leash"];
 const SORT_OPTIONS: { key: "recommended" | "distance" | "rating"; label: string }[] = [
-  { key: "recommended", label: "Recommended" },
-  { key: "distance", label: "Nearest" },
-  { key: "rating", label: "Top rated" },
+  { key: "recommended", label: "Recommandées" },
+  { key: "distance", label: "Les plus proches" },
+  { key: "rating", label: "Mieux notées" },
 ];
+
+/** Une balade est-elle dans la zone actuellement visible ? */
+function inViewport(w: Walk, vp: Viewport | null): boolean {
+  if (!vp) return true;
+  return Math.abs(w.start_lat - vp.latitude) <= vp.latitudeDelta / 2 &&
+    Math.abs(w.start_lng - vp.longitude) <= vp.longitudeDelta / 2;
+}
+
+/** Regroupe les balades proches en clusters selon le niveau de zoom. */
+function clusterWalks(list: Walk[], zoom: number) {
+  const cell = (360 / (256 * Math.pow(2, Math.max(0, zoom || 12)))) * 56;
+  const groups = new Map<string, Walk[]>();
+  list.forEach((w) => {
+    const k = Math.floor(w.start_lng / cell) + ":" + Math.floor(w.start_lat / cell);
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k)!.push(w);
+  });
+  const out: { count: number; coordinate: LatLng; walk: Walk | null }[] = [];
+  groups.forEach((arr) => {
+    if (arr.length === 1) {
+      out.push({ count: 1, coordinate: { latitude: arr[0].start_lat, longitude: arr[0].start_lng }, walk: arr[0] });
+    } else {
+      const lat = arr.reduce((s, w) => s + w.start_lat, 0) / arr.length;
+      const lng = arr.reduce((s, w) => s + w.start_lng, 0) / arr.length;
+      out.push({ count: arr.length, coordinate: { latitude: lat, longitude: lng }, walk: null });
+    }
+  });
+  return out;
+}
 
 export default function ExploreScreen() {
   const router = useRouter();
@@ -36,66 +66,68 @@ export default function ExploreScreen() {
   const [filters, setFilters] = useState({ environment: "all", difficulty: "all", dog_freedom: "all", min_rating: 0, max_duration: 0 });
   const [envFilter, setEnvFilter] = useState<string>("all");
   const [sortKey, setSortKey] = useState<"recommended" | "distance" | "rating">("recommended");
+  const [showWalks, setShowWalks] = useState(false);
+  const [viewport, setViewport] = useState<Viewport | null>(null);
+  const [mapFocus, setMapFocus] = useState<{ id: number; coordinate: LatLng; zoom: number } | undefined>(undefined);
+  const focusSeq = useRef(0);
   const { loc: userLoc, status: locStatus } = useUserLocation(sortKey === "distance");
+
+  // Région initiale stable (calculée une seule fois) : la carte ne se recentre jamais toute seule.
+  const initialRegion = useMemo(() => {
+    if (userLoc) return { latitude: userLoc.lat, longitude: userLoc.lng, latitudeDelta: 0.05, longitudeDelta: 0.05 };
+    return { latitude: 48.85, longitude: 2.35, latitudeDelta: 0.12, longitudeDelta: 0.12 };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const load = async () => {
     setErr("");
     try {
       const qs = new URLSearchParams();
-      const eff = { ...filters, environment: envFilter !== "all" ? envFilter : filters.environment };
-      if (eff.environment !== "all") qs.set("environment", eff.environment);
-      if (eff.difficulty !== "all") qs.set("difficulty", eff.difficulty);
-      if (eff.dog_freedom !== "all") qs.set("dog_freedom", eff.dog_freedom);
-      if (eff.min_rating > 0) qs.set("min_rating", String(eff.min_rating));
-      if (eff.max_duration > 0) qs.set("max_duration", String(eff.max_duration));
+      if (filters.difficulty !== "all") qs.set("difficulty", filters.difficulty);
+      if (filters.dog_freedom !== "all") qs.set("dog_freedom", filters.dog_freedom);
+      if (filters.min_rating > 0) qs.set("min_rating", String(filters.min_rating));
+      if (filters.max_duration > 0) qs.set("max_duration", String(filters.max_duration));
       const data = await api(`/walks?${qs.toString()}`);
       setWalks(data);
     } catch (e: any) {
-      setErr(e.message || "Failed to load");
+      setErr(e.message || "Échec du chargement");
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   };
 
-  useEffect(() => { load(); }, [filters, envFilter]);
+  useEffect(() => { load(); }, [filters.difficulty, filters.dog_freedom, filters.min_rating, filters.max_duration]);
+
+  // Balades affichées : seulement si l'utilisateur a cherché dans la zone OU a choisi un filtre,
+  // et uniquement celles qui sont dans la zone visible. Aucun recentrage de la carte.
+  const activeWalks = useMemo(() => {
+    if (!showWalks && envFilter === "all") return [];
+    return walks.filter((w) => (envFilter === "all" || w.environment === envFilter) && inViewport(w, viewport));
+  }, [walks, envFilter, showWalks, viewport]);
 
   const displayWalks = useMemo(() => {
-    let list = walks.slice();
+    let list = activeWalks.slice();
     if (sortKey === "distance" && userLoc) {
-      list = list
-        .map((w) => ({ ...w, _dist: distanceKm(userLoc, { lat: w.start_lat, lng: w.start_lng }) }))
-        .sort((a, b) => a._dist - b._dist);
+      list = list.map((w) => ({ ...w, _dist: distanceKm(userLoc, { lat: w.start_lat, lng: w.start_lng }) })).sort((a, b) => a._dist - b._dist);
     } else if (sortKey === "rating") {
       list = list.sort((a, b) => (b.rating_avg || 0) - (a.rating_avg || 0));
     } else {
       list = list.sort((a, b) => new Date(b.last_verified_at).getTime() - new Date(a.last_verified_at).getTime());
     }
     return list;
-  }, [walks, sortKey, userLoc]);
+  }, [activeWalks, sortKey, userLoc]);
 
-  const region = useMemo(() => {
-    if (displayWalks.length === 0) return { latitude: 48.85, longitude: 2.35, latitudeDelta: 4, longitudeDelta: 4 };
-    const lats = displayWalks.map((w) => w.start_lat);
-    const lngs = displayWalks.map((w) => w.start_lng);
-    const lat = (Math.min(...lats) + Math.max(...lats)) / 2;
-    const lng = (Math.min(...lngs) + Math.max(...lngs)) / 2;
-    const latD = Math.max(0.05, (Math.max(...lats) - Math.min(...lats)) * 1.5);
-    const lngD = Math.max(0.05, (Math.max(...lngs) - Math.min(...lngs)) * 1.5);
-    return { latitude: lat, longitude: lng, latitudeDelta: latD, longitudeDelta: lngD };
-  }, [displayWalks]);
-
-  const markers = displayWalks.map((w) => ({
-    id: w.id,
-    coordinate: { latitude: w.start_lat, longitude: w.start_lng },
-    color: walkFreedomColor[w.dog_freedom],
-    label: w.title,
-    onPress: () => router.push(`/walk/${w.id}`),
-  }));
+  const markers = useMemo(() => {
+    const clusters = clusterWalks(activeWalks, viewport?.zoom || 12);
+    return clusters.map((c, i) => c.count === 1
+      ? { id: c.walk.id, coordinate: c.coordinate, color: walkFreedomColor[c.walk.dog_freedom], label: c.walk.title, onPress: () => router.push(`/walk/${c.walk.id}`) }
+      : { id: `cluster-${i}`, coordinate: c.coordinate, count: c.count, onPress: () => { focusSeq.current += 1; setMapFocus({ id: focusSeq.current, coordinate: c.coordinate, zoom: Math.min(18, (viewport?.zoom || 12) + 2) }); } });
+  }, [activeWalks, viewport, router]);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
-      {/* Sticky Header */}
+      {/* En-tête collant */}
       <View style={[styles.header, { paddingTop: insets.top + spacing.sm }]}>
         <View style={styles.headerTop}>
           <Text style={styles.brand}>Doggo</Text>
@@ -115,7 +147,7 @@ export default function ExploreScreen() {
           {ENV_OPTIONS.map((e) => (
             <Pressable key={e} testID={`env-chip-${e}`} onPress={() => setEnvFilter(e)}
               style={[styles.chip, envFilter === e && styles.chipActive]}>
-              <Text style={[styles.chipText, envFilter === e && styles.chipTextActive]}>{e === "all" ? "All" : environmentLabels[e]}</Text>
+              <Text style={[styles.chipText, envFilter === e && styles.chipTextActive]}>{e === "all" ? "Tous" : environmentLabels[e]}</Text>
             </Pressable>
           ))}
         </ScrollView>
@@ -127,10 +159,10 @@ export default function ExploreScreen() {
             </Pressable>
           ))}
           {sortKey === "distance" && locStatus === "denied" && (
-            <Text style={styles.locWarn}>Location denied — enable to sort by distance</Text>
+            <Text style={styles.locWarn}>Localisation refusée — activez-la pour trier par distance</Text>
           )}
           {sortKey === "distance" && locStatus === "requesting" && (
-            <Text style={styles.locWarn}>Getting location…</Text>
+            <Text style={styles.locWarn}>Localisation en cours…</Text>
           )}
         </ScrollView>
       </View>
@@ -140,37 +172,52 @@ export default function ExploreScreen() {
       ) : err ? (
         <View style={styles.center}>
           <Text style={styles.err}>{err}</Text>
-          <Pressable style={styles.retryBtn} onPress={load}><Text style={styles.retryText}>Retry</Text></Pressable>
+          <Pressable style={styles.retryBtn} onPress={load}><Text style={styles.retryText}>Réessayer</Text></Pressable>
         </View>
       ) : viewMode === "map" ? (
         <View style={{ flex: 1 }}>
           <DoggoMap
             testID="explore-map"
-            initialRegion={region}
+            initialRegion={initialRegion}
             markers={markers}
+            mapFocus={mapFocus}
+            onRegionChange={setViewport}
             style={{ flex: 1 }}
           />
-          {/* Horizontal walk carousel */}
-          <View style={[styles.carouselWrap, { bottom: spacing.md }]}>
+          {/* Bouton « Rechercher dans cette zone » */}
+          <View pointerEvents="box-none" style={styles.searchAreaWrap}>
+            <Pressable testID="search-area" style={styles.searchAreaBtn} onPress={() => setShowWalks(true)}>
+              <MagnifyingGlass size={18} color={colors.onBrand} weight="bold" />
+              <Text style={styles.searchAreaText}>{showWalks ? "Réactualiser la zone" : "Rechercher dans cette zone"}</Text>
+            </Pressable>
+          </View>
+          {/* Carrousel horizontal des balades de la zone */}
+          <View style={[styles.carouselWrap, { bottom: spacing.md }]} pointerEvents="box-none">
             <FlatList
               horizontal
               showsHorizontalScrollIndicator={false}
               data={displayWalks}
-              keyExtractor={(w) => w.id}
+              keyExtractor={(w, i) => w.id || String(i)}
               contentContainerStyle={{ paddingHorizontal: spacing.md, gap: spacing.md }}
               renderItem={({ item }) => <MiniCard walk={item} onPress={() => router.push(`/walk/${item.id}`)} />}
-              ListEmptyComponent={<View style={styles.emptyMini}><Text style={styles.mutedText}>No walks match your filters</Text></View>}
+              ListEmptyComponent={
+                <View style={styles.emptyMini}>
+                  <Text style={styles.mutedText}>
+                    {(!showWalks && envFilter === "all") ? "Appuyez sur « Rechercher dans cette zone » pour voir les balades" : "Aucune balade dans cette zone"}
+                  </Text>
+                </View>
+              }
             />
           </View>
         </View>
       ) : (
         <FlatList
           data={displayWalks}
-          keyExtractor={(w) => w.id}
+          keyExtractor={(w, i) => w.id || String(i)}
           contentContainerStyle={{ padding: spacing.md, gap: spacing.md, paddingBottom: spacing.xxl }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}
           renderItem={({ item }) => <WalkCard walk={item} onPress={() => router.push(`/walk/${item.id}`)} />}
-          ListEmptyComponent={<View style={styles.center}><Text style={styles.mutedText}>No walks match your filters</Text></View>}
+          ListEmptyComponent={<View style={styles.center}><Text style={styles.mutedText}>{(!showWalks && envFilter === "all") ? "Recherchez des balades depuis l'onglet Carte" : "Aucune balade ne correspond à vos filtres"}</Text></View>}
         />
       )}
 
@@ -228,7 +275,7 @@ export function WalkCard({ walk, onPress }: { walk: any; onPress: () => void }) 
             <Stat icon={<TrendUp size={14} color={colors.muted} />} value={`${walk.distance_km} km`} />
             <Stat icon={<Star size={14} color={colors.warning} weight="fill" />} value={walk.rating_avg ? walk.rating_avg.toFixed(1) : "—"} extra={walk.rating_count ? `(${walk.rating_count})` : ""} />
           </View>
-          <Text style={styles.verified}>Verified {timeAgo(walk.last_verified_at)}</Text>
+          <Text style={styles.verified}>Vérifiée {timeAgo(walk.last_verified_at)}</Text>
         </View>
       </View>
     </Pressable>
@@ -257,18 +304,18 @@ function FilterModal({ open, onClose, filters, setFilters }: any) {
       <View style={styles.modalBackdrop}>
         <View style={[styles.sheet, { paddingBottom: insets.bottom + spacing.lg }]}>
           <View style={styles.sheetHeader}>
-            <Text style={styles.sheetTitle}>Filters</Text>
+            <Text style={styles.sheetTitle}>Filtres</Text>
             <Pressable testID="close-filters" onPress={onClose}><X size={22} color={colors.onSurface} /></Pressable>
           </View>
           <ScrollView contentContainerStyle={{ paddingBottom: spacing.md, gap: spacing.lg }}>
-            <FilterGroup label="Difficulty" options={DIFF_OPTIONS} value={local.difficulty} onChange={(v: string) => setLocal({ ...local, difficulty: v })} labels={{ all: "All", ...difficultyLabels }} />
-            <FilterGroup label="Dog freedom" options={FREE_OPTIONS} value={local.dog_freedom} onChange={(v: string) => setLocal({ ...local, dog_freedom: v })} labels={{ all: "All", ...freedomLabels }} />
-            <FilterGroup label="Max duration" options={["0", "30", "60", "90", "120"]} value={String(local.max_duration)} onChange={(v: string) => setLocal({ ...local, max_duration: Number(v) })} labels={{ "0": "Any", "30": "≤30min", "60": "≤1h", "90": "≤1h30", "120": "≤2h" }} />
-            <FilterGroup label="Minimum rating" options={["0", "3", "4", "4.5"]} value={String(local.min_rating)} onChange={(v: string) => setLocal({ ...local, min_rating: Number(v) })} labels={{ "0": "Any", "3": "3+", "4": "4+", "4.5": "4.5+" }} />
+            <FilterGroup label="Difficulté" options={DIFF_OPTIONS} value={local.difficulty} onChange={(v: string) => setLocal({ ...local, difficulty: v })} labels={{ all: "Toutes", ...difficultyLabels }} />
+            <FilterGroup label="Liberté du chien" options={FREE_OPTIONS} value={local.dog_freedom} onChange={(v: string) => setLocal({ ...local, dog_freedom: v })} labels={{ all: "Toutes", ...freedomLabels }} />
+            <FilterGroup label="Durée maximale" options={["0", "30", "60", "90", "120"]} value={String(local.max_duration)} onChange={(v: string) => setLocal({ ...local, max_duration: Number(v) })} labels={{ "0": "Toutes", "30": "≤ 30 min", "60": "≤ 1 h", "90": "≤ 1 h 30", "120": "≤ 2 h" }} />
+            <FilterGroup label="Note minimale" options={["0", "3", "4", "4.5"]} value={String(local.min_rating)} onChange={(v: string) => setLocal({ ...local, min_rating: Number(v) })} labels={{ "0": "Toutes", "3": "3+", "4": "4+", "4.5": "4,5+" }} />
           </ScrollView>
           <View style={styles.sheetActions}>
-            <Pressable testID="clear-filters" style={styles.secondaryBtn} onPress={clear}><Text style={styles.secondaryBtnText}>Reset</Text></Pressable>
-            <Pressable testID="apply-filters" style={styles.primaryBtn} onPress={apply}><Text style={styles.primaryBtnText}>Apply</Text></Pressable>
+            <Pressable testID="clear-filters" style={styles.secondaryBtn} onPress={clear}><Text style={styles.secondaryBtnText}>Réinitialiser</Text></Pressable>
+            <Pressable testID="apply-filters" style={styles.primaryBtn} onPress={apply}><Text style={styles.primaryBtnText}>Appliquer</Text></Pressable>
           </View>
         </View>
       </View>
@@ -312,6 +359,9 @@ const styles = StyleSheet.create({
   mutedText: { color: colors.muted, fontSize: 14 },
   retryBtn: { backgroundColor: colors.brandPrimary, paddingHorizontal: spacing.lg, paddingVertical: 10, borderRadius: radius.md },
   retryText: { color: colors.onBrand, fontWeight: "600" },
+  searchAreaWrap: { position: "absolute", top: spacing.md, left: 0, right: 0, alignItems: "center" },
+  searchAreaBtn: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: colors.brandPrimary, paddingHorizontal: spacing.lg, paddingVertical: 11, borderRadius: radius.pill, ...shadow() },
+  searchAreaText: { color: colors.onBrand, fontWeight: "700", fontSize: 14 },
   carouselWrap: { position: "absolute", left: 0, right: 0 },
   emptyMini: { padding: spacing.lg, backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border },
   miniCard: { width: 240, backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, overflow: "hidden", borderWidth: 1, borderColor: colors.border, ...shadow() },

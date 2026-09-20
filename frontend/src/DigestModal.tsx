@@ -36,8 +36,8 @@ export function DigestModal({ open, onClose, userLoc }: Props) {
             <View style={styles.headerLeft}>
               <View style={styles.iconCircle}><Sparkle size={18} color={colors.brandPrimary} weight="fill" /></View>
               <View>
-                <Text style={styles.title}>This week on Doggo</Text>
-                <Text style={styles.sub}>{userLoc ? "Nearby community activity" : "Community activity"}</Text>
+                <Text style={styles.title}>Cette semaine sur Doggo</Text>
+                <Text style={styles.sub}>{userLoc ? "Activité de la communauté à proximité" : "Activité de la communauté"}</Text>
               </View>
             </View>
             <Pressable testID="close-digest" onPress={onClose} hitSlop={8}><X size={22} color={colors.onSurface} /></Pressable>
@@ -47,41 +47,41 @@ export function DigestModal({ open, onClose, userLoc }: Props) {
             <View style={{ paddingVertical: spacing.xxl, alignItems: "center" }}><ActivityIndicator color={colors.brandPrimary} /></View>
           ) : (
             <ScrollView contentContainerStyle={{ paddingBottom: spacing.md, gap: spacing.md }}>
-              <SectionLabel text={`New walks (${data?.new_walks?.length ?? 0})`} />
+              <SectionLabel text={`Nouvelles balades (${data?.new_walks?.length ?? 0})`} />
               {data?.new_walks?.length ? data.new_walks.map((w: any) => (
                 <Pressable key={w.id} testID={`digest-walk-${w.id}`} style={styles.row} onPress={() => openWalk(w.id)}>
                   <View style={styles.rowIcon}><MapPin size={18} color={colors.brandPrimary} weight="fill" /></View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.rowTitle}>{w.title}</Text>
-                    <Text style={styles.rowSub}>{environmentLabels[w.environment]} · {formatDuration(w.duration_min)} · {w.distance_km}km{w.distance_from_you_km !== undefined ? ` · ${w.distance_from_you_km}km away` : ""}</Text>
+                    <Text style={styles.rowSub}>{environmentLabels[w.environment]} · {formatDuration(w.duration_min)} · {w.distance_km}km{w.distance_from_you_km !== undefined ? ` · à ${w.distance_from_you_km} km` : ""}</Text>
                   </View>
                   <Text style={styles.timeText}>{timeAgo(w.created_at)}</Text>
                 </Pressable>
-              )) : <Text style={styles.empty}>No new walks this week{userLoc ? " nearby" : ""}.</Text>}
+              )) : <Text style={styles.empty}>Aucune nouvelle balade cette semaine{userLoc ? " à proximité" : ""}.</Text>}
 
-              <SectionLabel text={`Fresh hazard reports (${data?.hazards?.length ?? 0})`} />
+              <SectionLabel text={`Nouveaux signalements (${data?.hazards?.length ?? 0})`} />
               {data?.hazards?.length ? data.hazards.map((h: any) => (
                 <Pressable key={h.id} testID={`digest-hazard-${h.id}`} style={styles.row} onPress={() => openWalk(h.walk_id)}>
                   <View style={[styles.rowIcon, { backgroundColor: "#FEE2E2" }]}><Warning size={18} color={colors.error} weight="fill" /></View>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.rowTitle}>{hazardTypeLabels[h.type] || h.type}{h.status === "resolved" ? " · resolved" : ""}</Text>
-                    <Text style={styles.rowSub} numberOfLines={1}>{h.walk_title}{h.distance_from_you_km !== undefined ? ` · ${h.distance_from_you_km}km away` : ""}</Text>
+                    <Text style={styles.rowTitle}>{hazardTypeLabels[h.type] || h.type}{h.status === "resolved" ? " · résolu" : ""}</Text>
+                    <Text style={styles.rowSub} numberOfLines={1}>{h.walk_title}{h.distance_from_you_km !== undefined ? ` · à ${h.distance_from_you_km} km` : ""}</Text>
                   </View>
                   <Text style={styles.timeText}>{timeAgo(h.last_confirmed_at)}</Text>
                 </Pressable>
-              )) : <Text style={styles.empty}>No hazard updates this week{userLoc ? " nearby" : ""}.</Text>}
+              )) : <Text style={styles.empty}>Aucune mise à jour de danger cette semaine{userLoc ? " à proximité" : ""}.</Text>}
 
-              <SectionLabel text={`Community confirmations (${data?.confirmations?.length ?? 0})`} />
+              <SectionLabel text={`Confirmations de la communauté (${data?.confirmations?.length ?? 0})`} />
               {data?.confirmations?.length ? data.confirmations.map((c: any) => (
                 <Pressable key={c.walk_id} testID={`digest-confirm-${c.walk_id}`} style={styles.row} onPress={() => openWalk(c.walk_id)}>
                   <View style={[styles.rowIcon, { backgroundColor: "#DCFCE7" }]}><CheckCircle size={18} color={colors.success} weight="fill" /></View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.rowTitle}>{c.walk_title}</Text>
-                    <Text style={styles.rowSub}>{c.count} confirmation{c.count > 1 ? "s" : ""} · {environmentLabels[c.environment]}{c.distance_from_you_km !== undefined ? ` · ${c.distance_from_you_km}km away` : ""}</Text>
+                    <Text style={styles.rowSub}>{c.count} confirmation{c.count > 1 ? "s" : ""} · {environmentLabels[c.environment]}{c.distance_from_you_km !== undefined ? ` · à ${c.distance_from_you_km} km` : ""}</Text>
                   </View>
                   <Text style={styles.timeText}>{timeAgo(c.last)}</Text>
                 </Pressable>
-              )) : <Text style={styles.empty}>No confirmations this week{userLoc ? " nearby" : ""}.</Text>}
+              )) : <Text style={styles.empty}>Aucune confirmation cette semaine{userLoc ? " à proximité" : ""}.</Text>}
             </ScrollView>
           )}
         </View>

@@ -33,10 +33,10 @@ export default function FavoritesScreen() {
     return (
       <View style={[styles.center, { paddingTop: insets.top }]}>
         <Heart size={40} color={colors.muted} />
-        <Text style={styles.title}>Save walks you love</Text>
-        <Text style={styles.muted}>Sign in to keep your favorites in one place and get nearby hazard alerts.</Text>
+        <Text style={styles.title}>Enregistrez vos balades préférées</Text>
+        <Text style={styles.muted}>Connectez-vous pour retrouver vos favoris au même endroit et recevoir les alertes de dangers à proximité.</Text>
         <Pressable testID="go-to-login" style={styles.primaryBtn} onPress={() => router.replace("/auth/login")}>
-          <Text style={styles.primaryBtnText}>Sign in</Text>
+          <Text style={styles.primaryBtnText}>Se connecter</Text>
         </Pressable>
       </View>
     );
@@ -45,8 +45,8 @@ export default function FavoritesScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
       <View style={[styles.header, { paddingTop: insets.top + spacing.sm }]}>
-        <Text style={styles.headerTitle}>Favorites</Text>
-        <Text style={styles.headerSub}>{walks.length} saved · {hazards.length} active hazards to watch</Text>
+        <Text style={styles.headerTitle}>Favoris</Text>
+        <Text style={styles.headerSub}>{walks.length} enregistrée(s) · {hazards.length} danger(s) actif(s) à surveiller</Text>
       </View>
 
       {loading ? (
@@ -54,10 +54,10 @@ export default function FavoritesScreen() {
       ) : walks.length === 0 ? (
         <View style={styles.center}>
           <Heart size={40} color={colors.muted} />
-          <Text style={styles.title}>No favorites yet</Text>
-          <Text style={styles.muted}>Tap the heart on any walk to save it here.</Text>
+          <Text style={styles.title}>Aucun favori pour l'instant</Text>
+          <Text style={styles.muted}>Touchez le cœur sur une balade pour l'enregistrer ici.</Text>
           <Pressable testID="go-explore" style={styles.primaryBtn} onPress={() => router.push("/(tabs)/explore")}>
-            <Text style={styles.primaryBtnText}>Explore walks</Text>
+            <Text style={styles.primaryBtnText}>Explorer les balades</Text>
           </Pressable>
         </View>
       ) : (
@@ -69,8 +69,8 @@ export default function FavoritesScreen() {
             <View style={styles.alertBox} testID="hazards-summary">
               <View style={styles.alertIconBox}><Warning size={18} color={colors.error} weight="fill" /></View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.alertTitle}>{hazards.length} active hazard{hazards.length > 1 ? "s" : ""} on your saved walks</Text>
-                <Text style={styles.alertSub}>You'll be alerted when you get within 300m of any of them.</Text>
+                <Text style={styles.alertTitle}>{hazards.length} danger(s) actif(s) sur vos balades enregistrées</Text>
+                <Text style={styles.alertSub}>Vous serez alerté lorsque vous passerez à moins de 300 m de l'un d'eux.</Text>
               </View>
             </View>
           ) : null}

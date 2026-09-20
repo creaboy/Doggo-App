@@ -21,7 +21,7 @@ function styleEnv() {
 // Types
 export type LatLng = { latitude: number; longitude: number };
 export type SegmentInput = { coordinates: LatLng[]; freedom: "free" | "caution" | "leash"; generated?: boolean; pending?: boolean };
-export type MarkerInput = { id: string; coordinate: LatLng; color?: string; label?: string; onPress?: () => void };
+export type MarkerInput = { id: string; coordinate: LatLng; color?: string; label?: string; count?: number; onPress?: () => void };
 
 const freedomColor: Record<string, string> = {
   free: colors.success,
@@ -45,6 +45,8 @@ export type MapProps = {
   locationFocus?: { id: number; coordinate: LatLng };
   onSegmentPress?: (index: number, coordinate?: LatLng) => void;
   selectedSegmentIndex?: number;
+  onRegionChange?: (region: { latitude: number; longitude: number; latitudeDelta: number; longitudeDelta: number; zoom: number }) => void;
+  mapFocus?: { id: number; coordinate: LatLng; zoom: number };
 };
 type Props = MapProps;
 
@@ -109,6 +111,7 @@ function buildHtml(
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@2.4.0/dist/maplibre-gl.css" />
 <style>html,body,#m{margin:0;padding:0;height:100%;width:100%;background:#F1F4EE;}
 .pin{width:22px;height:22px;border-radius:50%;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.4);box-sizing:border-box;cursor:pointer;}
+.cluster{min-width:28px;height:28px;padding:0 7px;border-radius:14px;background:#2D6AE8;color:#fff;font:700 13px/1 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;text-align:center;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.45);box-sizing:border-box;cursor:pointer;display:flex;align-items:center;justify-content:center;}
 .userdot{width:20px;height:20px;border-radius:50%;border:3px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,0.4);box-sizing:border-box;}
 .mapboxgl-ctrl-attrib{background:rgba(255,255,255,0.72);font-size:10px;}
 .mapboxgl-ctrl-group{border-radius:8px;}
@@ -128,7 +131,15 @@ function buildHtml(
   var sourceIds = [];
   var markerObjs = [];
   var focusId;
+  var mapFocusId;
   var userDot = null, userDotEl = null, accAdded = false;
+
+  function postRegion(mp){
+    try{
+      var b=mp.getBounds(); var sw=b.getSouthWest(); var ne=b.getNorthEast(); var c=mp.getCenter();
+      post({type:'region', latitude:c.lat, longitude:c.lng, latitudeDelta:ne.lat-sw.lat, longitudeDelta:ne.lng-sw.lng, zoom:mp.getZoom()});
+    }catch(e){}
+  }
 
   function post(obj){
     try { if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) window.ReactNativeWebView.postMessage(JSON.stringify(obj)); } catch(e){}
@@ -177,8 +188,9 @@ function buildHtml(
       }
     });
     (data.markers || []).forEach(function(m){
-      var el=document.createElement('div'); el.className='pin'; el.style.background=(m.color||COLORS.brand);
-      if(m.label) el.title=m.label;
+      var el=document.createElement('div');
+      if(m.count && m.count>1){ el.className='cluster'; el.textContent=String(m.count); }
+      else { el.className='pin'; el.style.background=(m.color||COLORS.brand); if(m.label) el.title=m.label; }
       var mk=new maplibregl.Marker({element:el,anchor:'center'}).setLngLat([m.coordinate.longitude,m.coordinate.latitude]).addTo(map);
       el.addEventListener('click',function(ev){ev.stopPropagation();post({type:'markerPress',id:m.id});});
       markerObjs.push(mk);
@@ -188,6 +200,7 @@ function buildHtml(
       if(coords.length>1){ var b=coords.reduce(function(acc,c){acc[0][0]=Math.min(acc[0][0],c[0]);acc[0][1]=Math.min(acc[0][1],c[1]);acc[1][0]=Math.max(acc[1][0],c[0]);acc[1][1]=Math.max(acc[1][1],c[1]);return acc;},[[999,999],[-999,-999]]);
         map.fitBounds(b,{padding:44,animate:false}); }
     }
+    if(data.mapFocus && data.mapFocus.id!==mapFocusId){ mapFocusId=data.mapFocus.id; map.flyTo({center:[data.mapFocus.coordinate.longitude,data.mapFocus.coordinate.latitude],zoom:data.mapFocus.zoom}); }
   };
 
   window.__setUserLocation = function(data){
@@ -261,10 +274,12 @@ function buildHtml(
     map.addControl(new maplibregl.NavigationControl({showCompass:false}),'top-left');
     map.addControl(new maplibregl.AttributionControl({compact:true}));
     map.on('click', function(e){ if(e.lngLat) post({type:'press',lat:e.lngLat.lat,lng:e.lngLat.lng}); });
+    map.on('moveend', function(){ postRegion(map); });
     map.on('load', function(){
       loadedFlag=true;
       googlePalette(map);
       post({type:'ready'});
+      postRegion(map);
       if(window.__pendingData){ var d=window.__pendingData; window.__pendingData=null; window.__renderData(d); }
       if(window.__pendingLocation){ var l=window.__pendingLocation; window.__pendingLocation=null; window.__setUserLocation(l); }
     });
@@ -288,11 +303,14 @@ function buildHtml(
           var color=seg.pending?COLORS.caution:(COLORS[seg.freedom]||COLORS.free);
           layers.push(L.polyline(pts,{color:color,weight:data.selectedSegmentIndex===index?8:5,dashArray:(seg.generated||seg.pending)?'8 8':null}).addTo(mapL));
           if(data.segmentEditable){ var hit=L.polyline(pts,{weight:44,opacity:0}).addTo(mapL); hit.on('click',function(e){L.DomEvent.stopPropagation(e);post({type:'segmentPress',index:index,lat:e.latlng.lat,lng:e.latlng.lng});}); layers.push(hit); } });
-        (data.markers||[]).forEach(function(m){ var el='<div class="pin" style="background:'+(m.color||COLORS.brand)+'"></div>';
-          var mk=L.marker([m.coordinate.latitude,m.coordinate.longitude],{icon:L.divIcon({html:el,iconSize:[22,22],iconAnchor:[11,11],className:''})}).addTo(mapL);
+        (data.markers||[]).forEach(function(m){
+          var isCluster=m.count&&m.count>1;
+          var el=isCluster?('<div class="cluster">'+m.count+'</div>'):('<div class="pin" style="background:'+(m.color||COLORS.brand)+'"></div>');
+          var mk=L.marker([m.coordinate.latitude,m.coordinate.longitude],{icon:L.divIcon({html:el,iconSize:isCluster?[28,28]:[22,22],iconAnchor:isCluster?[14,14]:[11,11],className:''})}).addTo(mapL);
           mk.on('click',function(){post({type:'markerPress',id:m.id});}); layers.push(mk); });
       };
-      var userMarker=null, accuracyCircle=null, focusIdL;
+      var userMarker=null, accuracyCircle=null, focusIdL, mapFocusIdL;
+      mapL.on('moveend', function(){ try{ var b=mapL.getBounds(); var sw=b.getSouthWest(); var ne=b.getNorthEast(); var c=mapL.getCenter(); post({type:'region',latitude:c.lat,longitude:c.lng,latitudeDelta:ne.lat-sw.lat,longitudeDelta:ne.lng-sw.lng,zoom:mapL.getZoom()}); }catch(e){} });
       window.__setUserLocation=function(data){
         if(data.userCoordinate){
           var p=[data.userCoordinate.latitude,data.userCoordinate.longitude];
@@ -311,8 +329,10 @@ function buildHtml(
       window.__renderData=function(data){
         origRender(data);
         if(data.fitToRoute){ var bb=[]; (data.segments||[]).forEach(function(sg){(sg.coordinates||[]).forEach(function(c){bb.push([c.latitude,c.longitude]);});}); if(bb.length>1) mapL.fitBounds(bb,{padding:[44,44]}); }
+        if(data.mapFocus && data.mapFocus.id!==mapFocusIdL){ mapFocusIdL=data.mapFocus.id; mapL.setView([data.mapFocus.coordinate.latitude,data.mapFocus.coordinate.longitude], data.mapFocus.zoom); }
       };
       post({type:'ready'});
+      try{ var b0=mapL.getBounds(); var sw0=b0.getSouthWest(); var ne0=b0.getNorthEast(); var c0=mapL.getCenter(); post({type:'region',latitude:c0.lat,longitude:c0.lng,latitudeDelta:ne0.lat-sw0.lat,longitudeDelta:ne0.lng-sw0.lng,zoom:mapL.getZoom()}); }catch(e){}
       if(window.__pendingData){ var d=window.__pendingData; window.__pendingData=null; window.__renderData(d); }
     };
     document.body.appendChild(s);
@@ -339,11 +359,11 @@ const NativeMapImpl: React.FC<Props> = (props) => {
 
   const pushData = () => {
     if (!ref.current || !readyRef.current) return;
-    const data = JSON.stringify({ segments: props.segments || [], markers: props.markers || [], segmentEditable: !!props.onSegmentPress, selectedSegmentIndex: props.selectedSegmentIndex, fitToRoute: props.fitToRoute, fitRevision: props.fitRevision });
+    const data = JSON.stringify({ segments: props.segments || [], markers: props.markers || [], segmentEditable: !!props.onSegmentPress, selectedSegmentIndex: props.selectedSegmentIndex, fitToRoute: props.fitToRoute, fitRevision: props.fitRevision, mapFocus: props.mapFocus });
     ref.current.injectJavaScript(`window.__renderData(${data}); true;`);
   };
 
-  useEffect(() => { pushData(); }, [props.segments, props.markers, props.onSegmentPress, props.selectedSegmentIndex, props.fitToRoute, props.fitRevision]);
+  useEffect(() => { pushData(); }, [props.segments, props.markers, props.onSegmentPress, props.selectedSegmentIndex, props.fitToRoute, props.fitRevision, props.mapFocus]);
   const pushLocation = useCallback(() => {
     if (!readyRef.current) return;
     const data = JSON.stringify({ userCoordinate: props.userCoordinate, userAccuracy: props.userAccuracy, locationStale: props.locationStale, locationFocus: props.locationFocus });
@@ -365,6 +385,8 @@ const NativeMapImpl: React.FC<Props> = (props) => {
     } else if (msg.type === "markerPress" && props.markers) {
       const m = props.markers.find((x) => x.id === msg.id);
       if (m?.onPress) m.onPress();
+    } else if (msg.type === "region" && props.onRegionChange) {
+      props.onRegionChange({ latitude: msg.latitude, longitude: msg.longitude, latitudeDelta: msg.latitudeDelta, longitudeDelta: msg.longitudeDelta, zoom: msg.zoom });
     }
   };
 
@@ -455,6 +477,7 @@ const WebMapLibreImpl: React.FC<Props> = (props) => {
   const accRef = useRef(false);
   const userDotRef = useRef<any>(null);
   const focusRef = useRef<number | undefined>(undefined);
+  const mapFocusIdRef = useRef<number | undefined>(undefined);
   const latestProps = useRef(props); latestProps.current = props;
   const style = useMemo(() => resolveMapStyle(styleEnv()), []);
 
@@ -491,12 +514,16 @@ const WebMapLibreImpl: React.FC<Props> = (props) => {
     });
     (data.markers || []).forEach((m) => {
       const el = document.createElement("div");
-      el.className = "pin"; el.style.background = m.color || colors.brandPrimary;
-      if (m.label) el.title = m.label;
+      if (m.count && m.count > 1) { el.className = "cluster"; el.textContent = String(m.count); }
+      else { el.className = "pin"; el.style.background = m.color || colors.brandPrimary; if (m.label) el.title = m.label; }
       const mk = new (window as any).maplibregl.Marker({ element: el, anchor: "center" }).setLngLat([m.coordinate.longitude, m.coordinate.latitude]).addTo(map);
       el.addEventListener("click", (ev) => { ev.stopPropagation(); m.onPress?.(); });
       markersRef.current.push(mk);
     });
+    if (data.mapFocus && data.mapFocus.id !== mapFocusIdRef.current) {
+      mapFocusIdRef.current = data.mapFocus.id;
+      map.flyTo({ center: [data.mapFocus.coordinate.longitude, data.mapFocus.coordinate.latitude], zoom: data.mapFocus.zoom });
+    }
     if (data.fitToRoute) {
       const coords: [number, number][] = [];
       (data.segments || []).forEach((s) => (s.coordinates || []).forEach((c) => coords.push([c.longitude, c.latitude])));
@@ -547,7 +574,9 @@ const WebMapLibreImpl: React.FC<Props> = (props) => {
       map.addControl(new mlgl.NavigationControl({ showCompass: false }), "top-left");
       map.addControl(new mlgl.AttributionControl({ compact: true }));
       map.on("click", (e: any) => { if (e.lngLat) latestProps.current.onPress?.({ latitude: e.lngLat.lat, longitude: e.lngLat.lng }); });
-      map.on("load", () => { applyGooglePalette(map); renderLayers(); renderLocation(); });
+      const emitRegion = () => { try { const b = map.getBounds(); const sw = b.getSouthWest(); const ne = b.getNorthEast(); const c = map.getCenter(); latestProps.current.onRegionChange?.({ latitude: c.lat, longitude: c.lng, latitudeDelta: ne.lat - sw.lat, longitudeDelta: ne.lng - sw.lng, zoom: map.getZoom() }); } catch {} };
+      map.on("moveend", emitRegion);
+      map.on("load", () => { applyGooglePalette(map); renderLayers(); renderLocation(); emitRegion(); });
       mapRef.current = map;
     }).catch(() => {});
     return () => {
@@ -585,6 +614,7 @@ const WebLeafletImpl: React.FC<Props> = (props) => {
       if (map.attributionControl) map.attributionControl.setPrefix(false);
       L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "&copy; OpenStreetMap" }).addTo(map);
       map.on("click", (e: any) => { latestProps.current.onPress?.({ latitude: e.latlng.lat, longitude: e.latlng.lng }); });
+      map.on("moveend", () => { try { const b = map.getBounds(); const sw = b.getSouthWest(); const ne = b.getNorthEast(); const c = map.getCenter(); latestProps.current.onRegionChange?.({ latitude: c.lat, longitude: c.lng, latitudeDelta: ne.lat - sw.lat, longitudeDelta: ne.lng - sw.lng, zoom: map.getZoom() }); } catch {} });
       mapRef.current = map;
     }).catch(() => {});
     return () => { cancelled = true; if (mapRef.current) { try { mapRef.current.remove(); } catch {} mapRef.current = null; } };
@@ -599,8 +629,9 @@ const WebLeafletImpl: React.FC<Props> = (props) => {
       layersRef.current.push(L.polyline(pts, { color: seg.pending ? colors.warning : freedomColor[seg.freedom], weight: props.selectedSegmentIndex === index ? 8 : 5 }).addTo(map));
     });
     props.markers?.forEach((m) => {
-      const html = `<div class="pin" style="background:${m.color || colors.brandPrimary}"></div>`;
-      layersRef.current.push(L.marker([m.coordinate.latitude, m.coordinate.longitude], { icon: L.divIcon({ html, iconSize: [22, 22], iconAnchor: [11, 11], className: "" }) }).addTo(map));
+      const isCluster = !!(m.count && m.count > 1);
+      const html = isCluster ? `<div class="cluster">${m.count}</div>` : `<div class="pin" style="background:${m.color || colors.brandPrimary}"></div>`;
+      layersRef.current.push(L.marker([m.coordinate.latitude, m.coordinate.longitude], { icon: L.divIcon({ html, iconSize: isCluster ? [28, 28] : [22, 22], iconAnchor: isCluster ? [14, 14] : [11, 11], className: "" }) }).addTo(map));
     });
   }, [props.segments, props.markers, props.selectedSegmentIndex]);
   return (

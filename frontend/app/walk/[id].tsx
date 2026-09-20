@@ -43,7 +43,7 @@ export default function WalkDetail() {
   useEffect(() => { load(); }, [load]);
 
   if (loading) return <View style={styles.center}><ActivityIndicator size="large" color={colors.brandPrimary} /></View>;
-  if (err || !data) return <View style={styles.center}><Text style={styles.err}>{err || "Not found"}</Text></View>;
+  if (err || !data) return <View style={styles.center}><Text style={styles.err}>{err || "Introuvable"}</Text></View>;
 
   const { walk, pois, hazards, comments, confirmations_30d } = data;
 
@@ -105,7 +105,7 @@ export default function WalkDetail() {
   const shareWalk = async () => {
     const base = (process.env.EXPO_PUBLIC_BACKEND_URL || "").replace(/\/$/, "");
     const url = `${base}/walk/${walk.id}`;
-    const message = `Check out this dog walk on Doggo — ${walk.title} (${walk.distance_km}km · ${formatDuration(walk.duration_min)})\n${url}`;
+    const message = `Découvrez cette balade pour chien sur Doggo — ${walk.title} (${walk.distance_km} km · ${formatDuration(walk.duration_min)})\n${url}`;
     try {
       if (Platform.OS === "web") {
         // Try native share first, fallback to clipboard
@@ -116,7 +116,7 @@ export default function WalkDetail() {
           return;
         }
         await Clipboard.setStringAsync(url);
-        showToast("Link copied to clipboard");
+        showToast("Lien copié dans le presse-papiers");
       } else {
         await Share.share({ message, url, title: walk.title });
       }
@@ -155,9 +155,9 @@ export default function WalkDetail() {
           {!!walk.description && <Text style={styles.desc}>{walk.description}</Text>}
 
           <View style={styles.statsGrid}>
-            <StatBox icon={<Clock size={18} color={colors.brandPrimary} />} label="Duration" value={formatDuration(walk.duration_min)} />
+            <StatBox icon={<Clock size={18} color={colors.brandPrimary} />} label="Durée" value={formatDuration(walk.duration_min)} />
             <StatBox icon={<TrendUp size={18} color={colors.brandPrimary} />} label="Distance" value={`${walk.distance_km} km`} />
-            <StatBox icon={<View style={[styles.stripe, { backgroundColor: walkFreedomColor[walk.dog_freedom] }]} />} label={freedomLabels[walk.dog_freedom]} value={`${walk.off_leash_pct}% free`} />
+            <StatBox icon={<View style={[styles.stripe, { backgroundColor: walkFreedomColor[walk.dog_freedom] }]} />} label={freedomLabels[walk.dog_freedom]} value={`${walk.off_leash_pct} % sans laisse`} />
           </View>
         </View>
 
@@ -170,16 +170,16 @@ export default function WalkDetail() {
         <View style={styles.section}>
           <View style={styles.confirmCard} testID="confirm-card">
             <View style={{ flex: 1 }}>
-              <Text style={styles.confirmTitle}>Last verified {timeAgo(walk.last_verified_at)}</Text>
-              <Text style={styles.confirmSub}>{confirmations_30d} community confirmations in the last 30 days</Text>
+              <Text style={styles.confirmTitle}>Vérifiée {timeAgo(walk.last_verified_at)}</Text>
+              <Text style={styles.confirmSub}>{confirmations_30d} confirmations de la communauté ces 30 derniers jours</Text>
             </View>
             <Pressable testID="open-confirm" style={styles.outlineBtn} onPress={() => setConfirmOpen(true)}>
-              <Text style={styles.outlineBtnText}>Confirm</Text>
+              <Text style={styles.outlineBtnText}>Confirmer</Text>
             </Pressable>
           </View>
         </View>
 
-        <SectionHeader title="Rate this walk" />
+        <SectionHeader title="Noter cette balade" />
         <View style={styles.ratingBar}>
           {[1, 2, 3, 4, 5].map((n) => (
             <Pressable key={n} testID={`rate-${n}`} onPress={() => rate(n)}>
@@ -188,31 +188,31 @@ export default function WalkDetail() {
           ))}
         </View>
 
-        <SectionHeader title={`Hazards (${hazards.length})`} action={{ label: "+ Add", onPress: () => user ? setHazardOpen(true) : router.push("/auth/login"), testID: "add-hazard" }} />
+        <SectionHeader title={`Dangers (${hazards.length})`} action={{ label: "+ Ajouter", onPress: () => user ? setHazardOpen(true) : router.push("/auth/login"), testID: "add-hazard" }} />
         <View style={styles.list}>
-          {hazards.length === 0 ? <Text style={styles.emptyText}>No hazards reported.</Text> : hazards.map((h: any) => (
+          {hazards.length === 0 ? <Text style={styles.emptyText}>Aucun danger signalé.</Text> : hazards.map((h: any) => (
             <View key={h.id} style={styles.hazardRow} testID={`hazard-${h.id}`}>
               <View style={[styles.iconBox, { backgroundColor: h.status === "resolved" ? colors.surfaceTertiary : "#FEE2E2" }]}>
                 <Warning size={18} color={h.status === "resolved" ? colors.muted : colors.error} weight="fill" />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.hazardTitle}>{hazardTypeLabels[h.type]}{h.status === "resolved" ? " · resolved" : ""}</Text>
+                <Text style={styles.hazardTitle}>{hazardTypeLabels[h.type]}{h.status === "resolved" ? " · résolu" : ""}</Text>
                 {!!h.description && <Text style={styles.hazardDesc}>{h.description}</Text>}
-                <Text style={styles.metaSmall}>Confirmed {timeAgo(h.last_confirmed_at)} · {h.confirmations} confirmations</Text>
+                <Text style={styles.metaSmall}>Confirmé {timeAgo(h.last_confirmed_at)} · {h.confirmations} confirmations</Text>
               </View>
               {h.status === "active" && (
                 <View style={{ gap: 4 }}>
-                  <Pressable testID={`confirm-hazard-${h.id}`} onPress={() => confirmHazard(h)} style={styles.tinyBtn}><Text style={styles.tinyBtnText}>Still there</Text></Pressable>
-                  <Pressable testID={`resolve-hazard-${h.id}`} onPress={() => resolveHazard(h)} style={[styles.tinyBtn, { backgroundColor: colors.surfaceTertiary }]}><Text style={styles.tinyBtnText}>Gone</Text></Pressable>
+                  <Pressable testID={`confirm-hazard-${h.id}`} onPress={() => confirmHazard(h)} style={styles.tinyBtn}><Text style={styles.tinyBtnText}>Toujours là</Text></Pressable>
+                  <Pressable testID={`resolve-hazard-${h.id}`} onPress={() => resolveHazard(h)} style={[styles.tinyBtn, { backgroundColor: colors.surfaceTertiary }]}><Text style={styles.tinyBtnText}>Disparu</Text></Pressable>
                 </View>
               )}
             </View>
           ))}
         </View>
 
-        <SectionHeader title={`Points of interest (${pois.length})`} />
+        <SectionHeader title={`Points d’intérêt (${pois.length})`} />
         <View style={styles.list}>
-          {pois.length === 0 ? <Text style={styles.emptyText}>No POIs yet.</Text> : pois.map((p: any) => (
+          {pois.length === 0 ? <Text style={styles.emptyText}>Aucun point d’intérêt pour l’instant.</Text> : pois.map((p: any) => (
             <View key={p.id} style={styles.poiRow} testID={`poi-${p.id}`}>
               <View style={styles.iconBox}>{poiIcon(p.type)}</View>
               <View style={{ flex: 1 }}>
@@ -223,7 +223,7 @@ export default function WalkDetail() {
           ))}
         </View>
 
-        <SectionHeader title={`Comments (${comments.length})`} />
+        <SectionHeader title={`Commentaires (${comments.length})`} />
         <View style={styles.list}>
           <View style={styles.commentInputRow}>
             <TextInput
@@ -231,13 +231,13 @@ export default function WalkDetail() {
               value={commentText}
               onChangeText={setCommentText}
               style={styles.commentInput}
-              placeholder={user ? "Share what you saw…" : "Sign in to comment"}
+              placeholder={user ? "Partagez ce que vous avez vu…" : "Connectez-vous pour commenter"}
               placeholderTextColor={colors.muted}
               editable={!!user}
               multiline
             />
             <Pressable testID="post-comment" style={styles.postBtn} onPress={postComment} disabled={posting || !user}>
-              <Text style={styles.postBtnText}>Post</Text>
+              <Text style={styles.postBtnText}>Publier</Text>
             </Pressable>
           </View>
           {comments.map((c: any) => (
@@ -273,9 +273,9 @@ function poiIcon(type: string) {
 function LegendRow() {
   return (
     <View style={styles.legendRow}>
-      <LegendItem color={colors.success} label="Off-leash" />
-      <LegendItem color={colors.warning} label="Caution" />
-      <LegendItem color={colors.error} label="Leash" />
+      <LegendItem color={colors.success} label="Sans laisse" />
+      <LegendItem color={colors.warning} label="Prudence" />
+      <LegendItem color={colors.error} label="Laisse" />
     </View>
   );
 }
@@ -306,24 +306,24 @@ function ConfirmModal({ open, onClose, onAccurate, onChange }: any) {
     <Modal transparent visible={open} animationType="slide" onRequestClose={onClose}>
       <View style={styles.backdrop}>
         <View style={[styles.sheet, { paddingBottom: insets.bottom + spacing.lg }]}>
-          <Text style={styles.sheetTitle}>Is this walk information still accurate?</Text>
+          <Text style={styles.sheetTitle}>Les informations de cette balade sont-elles toujours exactes ?</Text>
           <Pressable testID="confirm-accurate" style={styles.sheetBtnPrimary} onPress={onAccurate}>
-            <CheckCircle size={20} color="#fff" weight="fill" /><Text style={styles.sheetBtnPrimaryText}>Yes, everything looks correct</Text>
+            <CheckCircle size={20} color="#fff" weight="fill" /><Text style={styles.sheetBtnPrimaryText}>Oui, tout est correct</Text>
           </Pressable>
-          <Text style={styles.sheetSectionLabel}>Something changed:</Text>
+          <Text style={styles.sheetSectionLabel}>Quelque chose a changé :</Text>
           {[
-            ["new_hazard", "New hazard"],
-            ["path_inaccessible", "Path inaccessible"],
-            ["rules_changed", "Rules changed"],
-            ["hazard_disappeared", "Hazard disappeared"],
-            ["new_poi", "New useful point"],
-            ["other", "Other"],
+            ["new_hazard", "Nouveau danger"],
+            ["path_inaccessible", "Chemin inaccessible"],
+            ["rules_changed", "Règles modifiées"],
+            ["hazard_disappeared", "Danger disparu"],
+            ["new_poi", "Nouveau point utile"],
+            ["other", "Autre"],
           ].map(([key, label]) => (
             <Pressable key={key} testID={`change-${key}`} style={styles.sheetBtnGhost} onPress={() => onChange(key)}>
               <Text style={styles.sheetBtnGhostText}>{label}</Text>
             </Pressable>
           ))}
-          <Pressable style={styles.sheetCancel} onPress={onClose}><Text style={styles.sheetCancelText}>Cancel</Text></Pressable>
+          <Pressable style={styles.sheetCancel} onPress={onClose}><Text style={styles.sheetCancelText}>Annuler</Text></Pressable>
         </View>
       </View>
     </Modal>
@@ -349,7 +349,7 @@ function AddHazardModal({ open, onClose, walkId, centerLat, centerLng, onDone }:
     <Modal transparent visible={open} animationType="slide" onRequestClose={onClose}>
       <View style={styles.backdrop}>
         <View style={[styles.sheet, { paddingBottom: insets.bottom + spacing.lg }]}>
-          <Text style={styles.sheetTitle}>Report a hazard</Text>
+          <Text style={styles.sheetTitle}>Signaler un danger</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm, paddingVertical: 4 }}>
             {Object.entries(hazardTypeLabels).map(([k, v]) => (
               <Pressable key={k} testID={`hz-type-${k}`} onPress={() => setType(k)} style={[styles.chip, type === k && styles.chipActive]}>
@@ -358,11 +358,11 @@ function AddHazardModal({ open, onClose, walkId, centerLat, centerLng, onDone }:
             ))}
           </ScrollView>
           <TextInput testID="hz-description" value={description} onChangeText={setDescription}
-            style={styles.textArea} placeholder="Describe the hazard (optional)" placeholderTextColor={colors.muted} multiline />
+            style={styles.textArea} placeholder="Décrivez le danger (facultatif)" placeholderTextColor={colors.muted} multiline />
           <Pressable testID="submit-hazard" style={styles.sheetBtnPrimary} onPress={submit} disabled={busy}>
-            {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.sheetBtnPrimaryText}>Report hazard</Text>}
+            {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.sheetBtnPrimaryText}>Signaler le danger</Text>}
           </Pressable>
-          <Pressable style={styles.sheetCancel} onPress={onClose}><Text style={styles.sheetCancelText}>Cancel</Text></Pressable>
+          <Pressable style={styles.sheetCancel} onPress={onClose}><Text style={styles.sheetCancelText}>Annuler</Text></Pressable>
         </View>
       </View>
     </Modal>

@@ -22,13 +22,13 @@ export default function LoginScreen() {
       if (mode === "login") await loginEmail(email.trim(), password);
       else await registerEmail(email.trim(), password, username.trim() || email.split("@")[0]);
     } catch (e: any) {
-      setErr(e.message || "Error");
+      setErr(e.message || "Erreur");
     } finally { setBusy(false); }
   };
 
   const googleLogin = async () => {
     setErr(""); setBusy(true);
-    try { await loginGoogle(); } catch (e: any) { setErr(e.message || "Google sign-in failed"); }
+    try { await loginGoogle(); } catch (e: any) { setErr(e.message || "Échec de la connexion Google"); }
     finally { setBusy(false); }
   };
 
@@ -38,46 +38,46 @@ export default function LoginScreen() {
         keyboardShouldPersistTaps="handled">
         <View style={styles.logoWrap}>
           <View style={styles.logoBox}><Text style={styles.logoText}>Doggo</Text></View>
-          <Text style={styles.tagline}>Discover dog-friendly walks around you.</Text>
+          <Text style={styles.tagline}>Découvrez des balades adaptées aux chiens autour de vous.</Text>
         </View>
 
         <View style={styles.card}>
           <View style={styles.tabsRow}>
             <Pressable testID="auth-tab-login" style={[styles.tab, mode === "login" && styles.tabActive]} onPress={() => setMode("login")}>
-              <Text style={[styles.tabText, mode === "login" && styles.tabTextActive]}>Sign in</Text>
+              <Text style={[styles.tabText, mode === "login" && styles.tabTextActive]}>Se connecter</Text>
             </Pressable>
             <Pressable testID="auth-tab-register" style={[styles.tab, mode === "register" && styles.tabActive]} onPress={() => setMode("register")}>
-              <Text style={[styles.tabText, mode === "register" && styles.tabTextActive]}>Create account</Text>
+              <Text style={[styles.tabText, mode === "register" && styles.tabTextActive]}>Créer un compte</Text>
             </Pressable>
           </View>
 
           {mode === "register" && (
-            <TextInput testID="auth-username-input" style={styles.input} placeholder="Username" placeholderTextColor={colors.muted}
+            <TextInput testID="auth-username-input" style={styles.input} placeholder="Nom d’utilisateur" placeholderTextColor={colors.muted}
               value={username} onChangeText={setUsername} autoCapitalize="none" />
           )}
-          <TextInput testID="auth-email-input" style={styles.input} placeholder="Email" placeholderTextColor={colors.muted}
+          <TextInput testID="auth-email-input" style={styles.input} placeholder="E-mail" placeholderTextColor={colors.muted}
             value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" />
-          <TextInput testID="auth-password-input" style={styles.input} placeholder="Password" placeholderTextColor={colors.muted}
+          <TextInput testID="auth-password-input" style={styles.input} placeholder="Mot de passe" placeholderTextColor={colors.muted}
             value={password} onChangeText={setPassword} secureTextEntry />
 
           {!!err && <Text testID="auth-error" style={styles.err}>{err}</Text>}
 
           <Pressable testID="auth-submit-button" style={styles.primaryBtn} onPress={submit} disabled={busy}>
-            {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnText}>{mode === "login" ? "Sign in" : "Create account"}</Text>}
+            {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnText}>{mode === "login" ? "Se connecter" : "Créer un compte"}</Text>}
           </Pressable>
 
-          <View style={styles.divider}><View style={styles.line} /><Text style={styles.orText}>OR</Text><View style={styles.line} /></View>
+          <View style={styles.divider}><View style={styles.line} /><Text style={styles.orText}>OU</Text><View style={styles.line} /></View>
 
           <Pressable testID="auth-google-button" style={styles.googleBtn} onPress={googleLogin} disabled={busy}>
-            <Text style={styles.googleBtnText}>Continue with Google</Text>
+            <Text style={styles.googleBtnText}>Continuer avec Google</Text>
           </Pressable>
 
           <Pressable testID="auth-guest-button" style={styles.guestBtn} onPress={() => router.replace("/(tabs)/explore")}>
-            <Text style={styles.guestBtnText}>Browse as guest</Text>
+            <Text style={styles.guestBtnText}>Continuer en invité</Text>
           </Pressable>
         </View>
 
-        <Text style={styles.hint}>Demo account: demo@doggo.app / demo1234</Text>
+        <Text style={styles.hint}>Compte de démo : demo@doggo.app / demo1234</Text>
       </ScrollView>
     </KeyboardAvoidingView>
   );

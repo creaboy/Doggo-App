@@ -32,13 +32,13 @@ export default function SearchScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
       <View style={[styles.header, { paddingTop: insets.top + spacing.sm }]}>
-        <Text style={styles.title}>Search</Text>
+        <Text style={styles.title}>Recherche</Text>
         <View style={styles.searchBox}>
           <MagnifyingGlass size={18} color={colors.muted} />
           <TextInput
             testID="search-input"
             style={styles.input}
-            placeholder="Search walks by name or description"
+            placeholder="Rechercher une balade par nom ou description"
             placeholderTextColor={colors.muted}
             value={q}
             onChangeText={setQ}
@@ -53,7 +53,7 @@ export default function SearchScreen() {
           keyExtractor={(w) => w.id}
           contentContainerStyle={{ padding: spacing.md, gap: spacing.md, paddingBottom: spacing.xxl }}
           renderItem={({ item }) => <WalkCard walk={item} onPress={() => router.push(`/walk/${item.id}`)} />}
-          ListEmptyComponent={<View style={styles.center}><Text style={styles.muted}>No walks match "{q}"</Text></View>}
+          ListEmptyComponent={<View style={styles.center}><Text style={styles.muted}>Aucune balade ne correspond à « {q} »</Text></View>}
         />
       )}
     </View>

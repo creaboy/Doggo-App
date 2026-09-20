@@ -154,7 +154,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const initial = await Linking.getInitialURL();
         sid = extractSessionIdFromUrl(initial);
       }
-      if (!sid) throw new Error("Google sign-in was cancelled");
+      if (!sid) throw new Error("La connexion Google a été annulée");
       const u = await exchangeSessionId(sid);
       if (u) setUser(u);
     } finally {
