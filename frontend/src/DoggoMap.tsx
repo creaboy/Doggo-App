@@ -149,7 +149,7 @@ function buildHtml(
     diagEl.style.opacity = '1';
   }
   function diagHide(){ setTimeout(function(){ if(diagEl) diagEl.style.opacity='0'; }, 4500); }
-  window.onerror = function(m){ diag('JS err: '+m); return false; };
+  window.onerror = function(m){ if(m && String(m).indexOf('Script error')===0) return false; diag('JS err: '+m); return false; };
   diag('WebView OK');
 
   function circle(c, r){
