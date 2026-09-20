@@ -76,6 +76,9 @@ const MAP_COLORS = {
   outline: colors.surfaceSecondary, brand: colors.brandPrimary, location: colors.location, muted: colors.muted,
 };
 
+/** Patte de chien unique (SVG) utilisée comme icône de marqueur. */
+const PAW_SVG = '<svg viewBox="0 0 512 512"><ellipse cx="185" cy="125" rx="56" ry="82"/><ellipse cx="327" cy="125" rx="56" ry="82"/><ellipse cx="72" cy="210" rx="48" ry="72" transform="rotate(-24 72 210)"/><ellipse cx="440" cy="210" rx="48" ry="72" transform="rotate(24 440 210)"/><path d="M256 240c40 0 70 18 100 46s60 44 60 84c0 44-34 70-76 70-20 0-36-6-48-14-8-5-16-8-36-8s-28 3-36 8c-12 8-28 14-48 14-42 0-76-26-76-70 0-40 30-56 60-84s60-46 100-46z"/></svg>';
+
 /** Reteinte un style MapLibre (Liberty) vers la palette « Google Maps ». */
 function applyGooglePalette(map: any) {
   const st = map.getStyle(); if (!st || !st.layers) return;
@@ -111,7 +114,8 @@ function buildHtml(
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@2.4.0/dist/maplibre-gl.css" />
 <style>html,body,#m{margin:0;padding:0;height:100%;width:100%;background:#F1F4EE;}
 .pin{width:22px;height:22px;border-radius:50%;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.4);box-sizing:border-box;cursor:pointer;}
-.dogpin{width:32px;height:32px;border-radius:50%;background:#fff;border:3px solid #999;box-shadow:0 2px 6px rgba(0,0,0,0.4);box-sizing:border-box;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:17px;line-height:1;}
+.dogpin{width:32px;height:32px;border-radius:50%;background:#fff;border:3px solid #999;box-shadow:0 2px 6px rgba(0,0,0,0.4);box-sizing:border-box;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#374151;}
+.dogpin svg{width:19px;height:19px;fill:currentColor;display:block;}
 .cluster{min-width:28px;height:28px;padding:0 7px;border-radius:14px;background:#2D6AE8;color:#fff;font:700 13px/1 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;text-align:center;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.45);box-sizing:border-box;cursor:pointer;display:flex;align-items:center;justify-content:center;}
 .userdot{width:20px;height:20px;border-radius:50%;border:3px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,0.4);box-sizing:border-box;}
 .mapboxgl-ctrl-attrib{background:rgba(255,255,255,0.72);font-size:10px;}
@@ -124,6 +128,7 @@ function buildHtml(
 (function(){
   var STYLE = ${JSON.stringify(style)};
   var COLORS = ${JSON.stringify(MAP_COLORS)};
+  var PAW = '<svg viewBox="0 0 512 512"><ellipse cx="185" cy="125" rx="56" ry="82"/><ellipse cx="327" cy="125" rx="56" ry="82"/><ellipse cx="72" cy="210" rx="48" ry="72" transform="rotate(-24 72 210)"/><ellipse cx="440" cy="210" rx="48" ry="72" transform="rotate(24 440 210)"/><path d="M256 240c40 0 70 18 100 46s60 44 60 84c0 44-34 70-76 70-20 0-36-6-48-14-8-5-16-8-36-8s-28 3-36 8c-12 8-28 14-48 14-42 0-76-26-76-70 0-40 30-56 60-84s60-46 100-46z"/></svg>';
   var EMPTY = ${JSON.stringify(EMPTY_FC)};
   var CENTER = [${region.longitude}, ${region.latitude}];
   var ZOOM = ${zoom};
@@ -191,7 +196,7 @@ function buildHtml(
     (data.markers || []).forEach(function(m){
       var el=document.createElement('div');
       if(m.count && m.count>1){ el.className='cluster'; el.textContent=String(m.count); }
-      else { el.className='dogpin'; el.style.borderColor=(m.color||COLORS.brand); el.textContent='🐾'; if(m.label) el.title=m.label; }
+      else { el.className='dogpin'; var c=m.color||COLORS.brand; el.style.borderColor=c; el.style.color=c; el.innerHTML=PAW; if(m.label) el.title=m.label; }
       var mk=new maplibregl.Marker({element:el,anchor:'center'}).setLngLat([m.coordinate.longitude,m.coordinate.latitude]).addTo(map);
       el.addEventListener('click',function(ev){ev.stopPropagation();post({type:'markerPress',id:m.id});});
       markerObjs.push(mk);
@@ -306,7 +311,8 @@ function buildHtml(
           if(data.segmentEditable){ var hit=L.polyline(pts,{weight:44,opacity:0}).addTo(mapL); hit.on('click',function(e){L.DomEvent.stopPropagation(e);post({type:'segmentPress',index:index,lat:e.latlng.lat,lng:e.latlng.lng});}); layers.push(hit); } });
         (data.markers||[]).forEach(function(m){
           var isCluster=m.count&&m.count>1;
-          var el=isCluster?('<div class="cluster">'+m.count+'</div>'):('<div class="dogpin" style="border-color:'+(m.color||COLORS.brand)+'">🐾</div>');
+          var mc=m.color||COLORS.brand;
+          var el=isCluster?('<div class="cluster">'+m.count+'</div>'):('<div class="dogpin" style="border-color:'+mc+';color:'+mc+'">'+PAW+'</div>');
           var mk=L.marker([m.coordinate.latitude,m.coordinate.longitude],{icon:L.divIcon({html:el,iconSize:isCluster?[28,28]:[32,32],iconAnchor:isCluster?[14,14]:[16,16],className:''})}).addTo(mapL);
           mk.on('click',function(){post({type:'markerPress',id:m.id});}); layers.push(mk); });
       };
@@ -516,7 +522,7 @@ const WebMapLibreImpl: React.FC<Props> = (props) => {
     (data.markers || []).forEach((m) => {
       const el = document.createElement("div");
       if (m.count && m.count > 1) { el.className = "cluster"; el.textContent = String(m.count); }
-      else { el.className = "dogpin"; el.style.borderColor = m.color || colors.brandPrimary; el.textContent = "🐾"; if (m.label) el.title = m.label; }
+      else { const c = m.color || colors.brandPrimary; el.className = "dogpin"; el.style.borderColor = c; el.style.color = c; el.innerHTML = PAW_SVG; if (m.label) el.title = m.label; }
       const mk = new (window as any).maplibregl.Marker({ element: el, anchor: "center" }).setLngLat([m.coordinate.longitude, m.coordinate.latitude]).addTo(map);
       el.addEventListener("click", (ev) => { ev.stopPropagation(); m.onPress?.(); });
       markersRef.current.push(mk);
@@ -631,7 +637,8 @@ const WebLeafletImpl: React.FC<Props> = (props) => {
     });
     props.markers?.forEach((m) => {
       const isCluster = !!(m.count && m.count > 1);
-      const html = isCluster ? `<div class="cluster">${m.count}</div>` : `<div class="dogpin" style="border-color:${m.color || colors.brandPrimary}">🐾</div>`;
+      const c = m.color || colors.brandPrimary;
+      const html = isCluster ? `<div class="cluster">${m.count}</div>` : `<div class="dogpin" style="border-color:${c};color:${c}">${PAW_SVG}</div>`;
       layersRef.current.push(L.marker([m.coordinate.latitude, m.coordinate.longitude], { icon: L.divIcon({ html, iconSize: isCluster ? [28, 28] : [32, 32], iconAnchor: isCluster ? [14, 14] : [16, 16], className: "" }) }).addTo(map));
     });
   }, [props.segments, props.markers, props.selectedSegmentIndex]);
