@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { api } from './api';
 import type { LatLng } from './DoggoMap';
-import { addPoint, closed, Draft, emptyDraft, Freedom, rawGapToStart, usable, withinClosingDistance } from './routeDraft';
+import { addPoint, closed, Draft, emptyDraft, Freedom, legId, rawGapToStart, usable, withinClosingDistance } from './routeDraft';
 import { completeLoop, requestPath, snapDraft } from './routeCompletion';
 import { useRouteRecorder } from './useRouteRecorder';
 import { useGpsSnapping } from './useGpsSnapping';
@@ -15,6 +15,7 @@ export function useWalkCreation() {
   const [mode, setMode] = useState<'draw' | 'record'>('draw');
   const [freedom, setFreedom] = useState<Freedom>('free');
   const [selection, setSelection] = useState<{ index: number; point: LatLng | null } | null>(null);
+  const [wpSelection, setWpSelection] = useState<number | null>(null);
   const [preview, setPreview] = useState(false);
   const [finishOpen, setFinishOpen] = useState(false);
   const [error, setError] = useState('');
@@ -119,6 +120,30 @@ export function useWalkCreation() {
     try { commit(splitLeg(current.current, selection.index, selection.point), true); setSelection(null); setNotice('Segment divisé : chaque portion peut maintenant avoir sa propre règle.'); setError(''); }
     catch (e: any) { setError(e.message); }
   };
+  const removeWaypoint = (k: number) => {
+    if (locked || gps.busy || working.current || recorder.recording || recorder.starting || preview) return;
+    const d = current.current;
+    const a = k - 2, b = k - 1; // segments avant/après le point k
+    if (k < 2 || a < 0 || b > d.legs.length - 1) return;
+    if (closed(d) && b === d.legs.length - 1) { setError('Impossible de supprimer le point qui referme la boucle.'); return; }
+    const prev = d.legs[a], next = d.legs[b];
+    const merged = { id: legId(), coordinates: [prev.coordinates[0], next.coordinates[next.coordinates.length - 1]], freedom: prev.freedom, source: 'draw' as const, snapped: false };
+    commit({ ...d, legs: [...d.legs.slice(0, a), merged, ...d.legs.slice(b + 1)] }, true);
+    setWpSelection(null); setSelection(null); setError('');
+    void run('Recalcul de l’itinéraire…', async () => {
+      const coordinates = await requestPath(merged.coordinates);
+      commit({ ...current.current, legs: current.current.legs.map(l => l.id === merged.id ? { ...l, coordinates, snapped: true } : l) });
+      setNotice(`Point ${k} supprimé · itinéraire recalculé`);
+    });
+  };
+  const canRemoveWaypoint = (k: number) => {
+    const d = current.current;
+    if (k < 2) return false;
+    const b = k - 1;
+    if (b > d.legs.length - 1) return false;
+    if (closed(d) && b === d.legs.length - 1) return false;
+    return true;
+  };
   const publish = async (details: object) => {
     if (working.current || gps.busy || !preview || recorder.recording || recorder.starting || !closed(current.current) || !usable(current.current) || current.current.legs.some(l => !l.snapped)) throw new Error('Vérifiez une boucle entièrement ajustée avant de publier.');
     working.current = true; setBusy('Publication…'); setError('');
@@ -131,6 +156,7 @@ export function useWalkCreation() {
   };
   const canUndoInPreview = !!history.current.length && closed(history.current.at(-1)!);
   return { draft, mode, setMode, freedom, setFreedom, preview, setPreview, gps, selection, selectSegment, setSelection, splitSelected, canUndoInPreview,
+    wpSelection, setWpSelection, removeWaypoint, canRemoveWaypoint,
     finishOpen, error, setError, notice, busy, locked, recorder, tap, undo, clear, closeManual, snap,
     start, stop, continueRecording, finishReturn, showPreview, updateFreedom, publish };
 }

@@ -41,6 +41,11 @@ export default function CreateScreen() {
   }, []);
   const totals = stats(c.draft);
   const isClosed = closed(c.draft);
+  const markers = routeMarkers(c.draft).map(m => ({ ...m,
+    onPress: m.waypoint === 1
+      ? (c.draft.legs.length && !c.locked ? () => c.closeManual() : undefined)
+      : () => { if (!c.locked) c.setWpSelection(m.waypoint as number); },
+  }));
   const publish = async () => {
     c.setError('');
     if (!user) { c.setError('Connectez-vous pour publier.'); return; }
@@ -62,19 +67,27 @@ export default function CreateScreen() {
     </View>
     <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: insets.bottom + spacing.xl }}>
       <View style={styles.map}><DoggoMap testID="create-map" initialRegion={isClosed ? regionFor(c.draft) : initialRegion}
-        segments={c.draft.legs.map(l => ({ ...l, pending: !l.snapped }))} markers={routeMarkers(c.draft)} onPress={c.mode === 'draw' && !c.locked ? c.tap : undefined}
+        segments={c.draft.legs.map(l => ({ ...l, pending: !l.snapped }))} markers={markers} onPress={c.mode === 'draw' && !c.locked ? c.tap : undefined}
         onSegmentPress={c.selectSegment} selectedSegmentIndex={c.selection?.index}
         showsUserLocation userCoordinate={c.recorder.position} fitToRoute={isClosed && !c.recorder.recording} /></View>
       <View style={styles.section}>
         <Text testID="route-status" style={isClosed ? styles.notice : styles.hint}>{c.recorder.recording ? 'Balade en cours · seul le bouton Terminer arrête le GPS' : isClosed ? 'Boucle fermée · départ = arrivée' : 'Le premier point est votre départ. Revenez-y pour former une boucle.'}</Text>
         <Text testID="route-live-stats" style={styles.text}>{totals.distanceKm.toFixed(2)} km · {totals.offLeashPct}% sans laisse · {c.draft.legs.reduce((n, l) => n + l.coordinates.length - 1, c.draft.start ? 1 : 0)} points</Text>
         {c.mode === 'draw' ? <>
-          <Text testID="draw-instructions" style={styles.hint}>Chaque nouveau segment suit immédiatement les chemins. Touchez un segment pour changer sa règle ou le diviser.</Text>
+          <Text testID="draw-instructions" style={styles.hint}>Les points sont numérotés. Touchez la carte pour ajouter le point suivant, une section pour changer sa règle ou y insérer un point, un point numéroté pour le supprimer.</Text>
           <View style={styles.row}>
             <Action id="undo-point" label="Annuler le dernier ajout" onPress={c.undo} disabled={c.locked || !c.draft.start} />
             <Action id="clear-points" label="Effacer" onPress={c.clear} disabled={c.locked || !c.draft.start} />
             <Action id="snap-path" label="Suivre les chemins" onPress={c.snap} disabled={c.locked || !c.draft.legs.length} />
           </View>
+          {!!c.wpSelection && c.wpSelection >= 2 && <View style={styles.card}>
+            <Text style={styles.text}>Point {c.wpSelection} sélectionné</Text>
+            <View style={styles.row}>
+              <Action id="remove-wp" label="Supprimer ce point" onPress={() => c.removeWaypoint(c.wpSelection!)} disabled={c.locked || !c.canRemoveWaypoint(c.wpSelection)} />
+              <Action id="close-wp-sel" label="Fermer" onPress={() => c.setWpSelection(null)} disabled={false} />
+            </View>
+          </View>}
+          <Text testID="draw-wp-hint" style={styles.hint}>Touchez un point numéroté pour le supprimer · touchez le point 1 (départ) pour fermer la boucle.</Text>
           <Pressable testID="close-loop" disabled={c.locked || !c.draft.legs.length || isClosed} style={[styles.primary, (c.locked || !c.draft.legs.length || isClosed) && styles.disabled]} onPress={c.closeManual}>
             <Text style={[styles.text, styles.onBrand]}>{isClosed ? 'Boucle déjà fermée' : 'Fermer la boucle'}</Text>
           </Pressable>
