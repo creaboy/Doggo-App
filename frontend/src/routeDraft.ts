@@ -1,7 +1,7 @@
 import type { LatLng, SegmentInput } from './DoggoMap';
 export type Freedom = SegmentInput['freedom'];
 export type GpsSample = LatLng & { timestamp: number; accuracy: number };
-export type Leg = SegmentInput & { id?: string; source: 'draw' | 'gps' | 'return'; snapped?: boolean; sealed?: boolean; gpsSamples?: GpsSample[] };
+export type Leg = SegmentInput & { id?: string; source: 'draw' | 'gps' | 'return'; snapped?: boolean; sealed?: boolean; gpsSamples?: GpsSample[]; offRoute?: boolean };
 export type Draft = { start: LatLng | null; legs: Leg[]; rawGps?: GpsSample[] };
 let nextId = 0;
 const sessionId = Date.now().toString(36);

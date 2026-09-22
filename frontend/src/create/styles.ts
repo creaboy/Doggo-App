@@ -9,7 +9,7 @@ export const styles = StyleSheet.create({
   active: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
   text: { color: colors.onSurface, fontSize: 14, fontWeight: '600' },
   onBrand: { color: colors.onBrand },
-  map: { height: 350, marginBottom: spacing.md },
+  map: { height: 320, marginBottom: spacing.md },
   section: { paddingHorizontal: spacing.lg, gap: spacing.md, marginBottom: spacing.xl },
   hint: { color: colors.muted, fontSize: 13, lineHeight: 19 },
   small: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 44, paddingHorizontal: spacing.md, borderRadius: radius.md, backgroundColor: colors.surfaceTertiary },

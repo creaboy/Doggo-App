@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { api } from './api';
 import type { LatLng } from './DoggoMap';
-import { addPoint, closed, Draft, emptyDraft, Freedom, legId, rawGapToStart, usable, withinClosingDistance } from './routeDraft';
+import { addPoint, closed, Draft, emptyDraft, Freedom, legDistance, legId, meters, rawGapToStart, usable, withinClosingDistance } from './routeDraft';
 import { completeLoop, requestPath, snapDraft } from './routeCompletion';
 import { useRouteRecorder } from './useRouteRecorder';
 import { useGpsSnapping } from './useGpsSnapping';
@@ -16,6 +16,7 @@ export function useWalkCreation() {
   const [freedom, setFreedom] = useState<Freedom>('free');
   const [selection, setSelection] = useState<{ index: number; point: LatLng | null } | null>(null);
   const [wpSelection, setWpSelection] = useState<number | null>(null);
+  const [offRoute, setOffRoute] = useState<{ legId: string; straight: LatLng[]; snapped: LatLng[] | null } | null>(null);
   const [preview, setPreview] = useState(false);
   const [finishOpen, setFinishOpen] = useState(false);
   const [error, setError] = useState('');
@@ -37,16 +38,47 @@ export function useWalkCreation() {
   };
   const tap = (point: LatLng) => {
     if (mode !== 'draw' || locked || gps.busy || working.current || preview || finishOpen) return;
+    // Toucher (ou retoucher) le point de départ ferme la boucle.
+    if (current.current.start && current.current.legs.length && meters(point, current.current.start) <= 30) { void closeManual(); return; }
     const next = addPoint(current.current, point, freedom, 'draw');
     if (next === current.current) return;
     commit(next, true); setSelection(null); setError(''); setNotice('');
     if (!next.legs.length) return;
     const leg = next.legs.at(-1)!;
+    const straight = [leg.coordinates[0], leg.coordinates[leg.coordinates.length - 1]];
+    const straightLen = meters(straight[0], straight[1]);
     void run('Ajustement du nouveau segment…', async () => {
-      const coordinates = await requestPath(leg.coordinates);
-      commit({ ...current.current, legs: current.current.legs.map(l => l.id === leg.id ? { ...l, coordinates, snapped: true } : l) });
-      setNotice('Segment ajusté aux chemins · touchez-le pour modifier ses règles');
+      let snapped: LatLng[] | null = null;
+      try { snapped = await requestPath(leg.coordinates); } catch { snapped = null; }
+      const snappedLen = snapped ? legDistance({ coordinates: snapped, freedom: leg.freedom }) : Infinity;
+      if (snapped && straightLen > 5 && snappedLen / straightLen <= 1.3) {
+        commit({ ...current.current, legs: current.current.legs.map(l => l.id === leg.id ? { ...l, coordinates: snapped!, snapped: true } : l) });
+        setNotice('Segment ajusté aux chemins · touchez-le pour modifier ses règles');
+      } else {
+        setOffRoute({ legId: leg.id!, straight, snapped });
+      }
     });
+  };
+  const acceptOffRoute = () => {
+    if (!offRoute) return;
+    const { legId, straight } = offRoute;
+    commit({ ...current.current, legs: current.current.legs.map(l => l.id === legId ? { ...l, coordinates: straight, snapped: true, offRoute: true, generated: true } : l) }, true);
+    setOffRoute(null); setNotice('Trajet hors-chemin conservé (affiché en pointillés).'); setError('');
+  };
+  const alignToPaths = () => {
+    if (!offRoute) return;
+    const { legId, snapped } = offRoute;
+    setOffRoute(null);
+    if (snapped) {
+      commit({ ...current.current, legs: current.current.legs.map(l => l.id === legId ? { ...l, coordinates: snapped, snapped: true } : l) }, true);
+      setNotice('Trajet aligné sur les chemins.');
+    } else {
+      void run('Alignement sur les chemins…', async () => {
+        const leg = current.current.legs.find(l => l.id === legId); if (!leg) return;
+        const coordinates = await requestPath([leg.coordinates[0], leg.coordinates[leg.coordinates.length - 1]]);
+        commit({ ...current.current, legs: current.current.legs.map(l => l.id === legId ? { ...l, coordinates, snapped: true } : l) });
+      });
+    }
   };
   const undo = () => {
     if (locked || gps.busy || working.current) return;
@@ -157,6 +189,7 @@ export function useWalkCreation() {
   const canUndoInPreview = !!history.current.length && closed(history.current.at(-1)!);
   return { draft, mode, setMode, freedom, setFreedom, preview, setPreview, gps, selection, selectSegment, setSelection, splitSelected, canUndoInPreview,
     wpSelection, setWpSelection, removeWaypoint, canRemoveWaypoint,
+    offRoute, acceptOffRoute, alignToPaths,
     finishOpen, error, setError, notice, busy, locked, recorder, tap, undo, clear, closeManual, snap,
     start, stop, continueRecording, finishReturn, showPreview, updateFreedom, publish };
 }

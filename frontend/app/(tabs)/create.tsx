@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, Pressable, TextInput, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, Pressable, TextInput, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform, Modal } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
@@ -65,11 +65,11 @@ export default function CreateScreen() {
       </Pressable>)}</View>
       {!!c.error && !c.preview && !c.finishOpen && <Text testID="create-route-alert" style={styles.error} accessibilityRole="alert">{c.error}</Text>}
     </View>
+    <View style={styles.map}><DoggoMap testID="create-map" initialRegion={isClosed ? regionFor(c.draft) : initialRegion}
+      segments={c.draft.legs.map(l => ({ ...l, pending: !l.snapped }))} markers={markers} onPress={c.mode === 'draw' && !c.locked ? c.tap : undefined}
+      onSegmentPress={c.selectSegment} selectedSegmentIndex={c.selection?.index}
+      showsUserLocation userCoordinate={c.recorder.position} fitToRoute={isClosed && !c.recorder.recording} /></View>
     <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: insets.bottom + spacing.xl }}>
-      <View style={styles.map}><DoggoMap testID="create-map" initialRegion={isClosed ? regionFor(c.draft) : initialRegion}
-        segments={c.draft.legs.map(l => ({ ...l, pending: !l.snapped }))} markers={markers} onPress={c.mode === 'draw' && !c.locked ? c.tap : undefined}
-        onSegmentPress={c.selectSegment} selectedSegmentIndex={c.selection?.index}
-        showsUserLocation userCoordinate={c.recorder.position} fitToRoute={isClosed && !c.recorder.recording} /></View>
       <View style={styles.section}>
         <Text testID="route-status" style={isClosed ? styles.notice : styles.hint}>{c.recorder.recording ? 'Balade en cours · seul le bouton Terminer arrête le GPS' : isClosed ? 'Boucle fermée · départ = arrivée' : 'Le premier point est votre départ. Revenez-y pour former une boucle.'}</Text>
         <Text testID="route-live-stats" style={styles.text}>{totals.distanceKm.toFixed(2)} km · {totals.offLeashPct}% sans laisse · {c.draft.legs.reduce((n, l) => n + l.coordinates.length - 1, c.draft.start ? 1 : 0)} points</Text>
@@ -139,6 +139,16 @@ export default function CreateScreen() {
         <Pressable testID="preview-route" disabled={c.locked} style={[styles.primary, c.locked && styles.disabled]} onPress={c.showPreview}><Text style={[styles.text, styles.onBrand]}>Vérifier la boucle avant publication</Text></Pressable>
       </View>
     </ScrollView>
+    {c.offRoute && <Modal transparent visible animationType="fade" onRequestClose={c.alignToPaths}>
+      <View style={styles.overlay}>
+        <View style={styles.dialog}>
+          <Text style={styles.title}>Hors des chemins référencés</Text>
+          <Text style={styles.hint}>Vous vous apprêtez à définir un trajet en dehors des routes référencées de la carte (à travers champ, parc…). Que voulez-vous faire ?</Text>
+          <Pressable testID="offroute-keep" style={styles.primary} onPress={c.acceptOffRoute}><Text style={[styles.text, styles.onBrand]}>C’est le bon trajet</Text></Pressable>
+          <Pressable testID="offroute-align" style={styles.small} onPress={c.alignToPaths}><Text style={styles.text}>Aligner le trajet avec les chemins</Text></Pressable>
+        </View>
+      </View>
+    </Modal>}
     {c.finishOpen && <FinishDialog open gap={rawGapToStart(c.draft)} busy={c.busy} error={c.error} onComplete={c.finishReturn} onContinue={c.continueRecording} />}
     {c.preview && <RoutePreview open draft={c.draft} duration={duration} title={title} error={c.error} busy={c.busy}
       onBack={() => c.setPreview(false)} onPublish={publish} onFreedom={c.updateFreedom} selection={c.selection}
