@@ -5,6 +5,7 @@ import { GoogleDoggoMap } from "./GoogleDoggoMap";
 import { useLiveMapLocation } from "./useLiveMapLocation";
 import { MapLocationControl } from "./MapLocationControl";
 import { resolveMapStyle, TILE_USER_AGENT, MapStyleSource } from "./tileSource";
+import { FOCUS_DEFAULT_ZOOM } from "./mapStyle";
 
 /**
  * Variables `EXPO_PUBLIC_*` lues ici (et non passées comme objet) pour que Metro les
@@ -42,12 +43,15 @@ export type MapProps = {
   userCoordinate?: LatLng | null;
   userAccuracy?: number | null;
   locationStale?: boolean;
-  locationFocus?: { id: number; coordinate: LatLng };
+  locationFocus?: { id: number; coordinate: LatLng; zoom?: number };
   onSegmentPress?: (index: number, coordinate?: LatLng) => void;
   selectedSegmentIndex?: number;
   onLongPress?: (c: LatLng) => void;
   onRegionChange?: (region: { latitude: number; longitude: number; latitudeDelta: number; longitudeDelta: number; zoom: number }) => void;
   mapFocus?: { id: number; coordinate: LatLng; zoom: number };
+  // Ouvre la carte sur la première position GPS (au lieu du centre par défaut), une seule fois.
+  focusUserOnLoad?: boolean;
+  focusUserZoom?: number;
 };
 type Props = MapProps;
 
@@ -140,6 +144,8 @@ function buildHtml(
   var markerObjs = [];
   var focusId;
   var mapFocusId;
+  // Cadrage explicite : une seule fois par fitRevision, jamais à chaque retouche du tracé.
+  var fitKey = '';
   var userDot = null, userDotEl = null, accAdded = false;
 
   function postRegion(mp){
@@ -204,9 +210,12 @@ function buildHtml(
       el.addEventListener('click',function(ev){ev.stopPropagation();post({type:'markerPress',id:m.id});});
       markerObjs.push(mk);
     });
-    if(data.fitToRoute){
+    if(!data.fitToRoute) fitKey='';
+    else {
+      var fitNext=String(data.fitRevision===undefined?'initial':data.fitRevision);
       var coords=[]; (data.segments||[]).forEach(function(s){ (s.coordinates||[]).forEach(function(c){coords.push([c.longitude,c.latitude]);}); });
-      if(coords.length>1){ var b=coords.reduce(function(acc,c){acc[0][0]=Math.min(acc[0][0],c[0]);acc[0][1]=Math.min(acc[0][1],c[1]);acc[1][0]=Math.max(acc[1][0],c[0]);acc[1][1]=Math.max(acc[1][1],c[1]);return acc;},[[999,999],[-999,-999]]);
+      if(coords.length>1 && fitNext!==fitKey){ fitKey=fitNext;
+        var b=coords.reduce(function(acc,c){acc[0][0]=Math.min(acc[0][0],c[0]);acc[0][1]=Math.min(acc[0][1],c[1]);acc[1][0]=Math.max(acc[1][0],c[0]);acc[1][1]=Math.max(acc[1][1],c[1]);return acc;},[[999,999],[-999,-999]]);
         map.fitBounds(b,{padding:44,animate:false}); }
     }
     if(data.mapFocus && data.mapFocus.id!==mapFocusId){ mapFocusId=data.mapFocus.id; map.flyTo({center:[data.mapFocus.coordinate.longitude,data.mapFocus.coordinate.latitude],zoom:data.mapFocus.zoom}); }
@@ -235,7 +244,7 @@ function buildHtml(
       if(userDot){ try{ userDot.remove(); }catch(e){} userDot=null; userDotEl=null; }
       if(accAdded && map.getSource('doggo-acc')) map.getSource('doggo-acc').setData(EMPTY);
     }
-    if(data.locationFocus && data.locationFocus.id!==focusId){ focusId=data.locationFocus.id; var c=data.locationFocus.coordinate; map.flyTo({center:[c.longitude,c.latitude],zoom:17}); }
+    if(data.locationFocus && data.locationFocus.id!==focusId){ focusId=data.locationFocus.id; var c=data.locationFocus.coordinate; map.flyTo({center:[c.longitude,c.latitude],zoom:c.zoom||17}); }
   };
 
   // Reteinte le style Liberty vers la palette « Google Maps » de la référence :
@@ -335,12 +344,15 @@ function buildHtml(
           if(userMarker){mapL.removeLayer(userMarker);userMarker=null;}
           if(accuracyCircle){mapL.removeLayer(accuracyCircle);accuracyCircle=null;}
         }
-        if(data.locationFocus && data.locationFocus.id!==focusIdL){focusIdL=data.locationFocus.id; var c=data.locationFocus.coordinate; mapL.setView([c.latitude,c.longitude],17);}
+        if(data.locationFocus && data.locationFocus.id!==focusIdL){focusIdL=data.locationFocus.id; var c=data.locationFocus.coordinate; mapL.setView([c.latitude,c.longitude],c.zoom||17);}
       };
       var origRender=window.__renderData;
       window.__renderData=function(data){
         origRender(data);
-        if(data.fitToRoute){ var bb=[]; (data.segments||[]).forEach(function(sg){(sg.coordinates||[]).forEach(function(c){bb.push([c.latitude,c.longitude]);});}); if(bb.length>1) mapL.fitBounds(bb,{padding:[44,44]}); }
+        // Cadrage explicite : une seule fois par fitRevision.
+        if(!data.fitToRoute) fitKey='';
+        else { var fitNextL=String(data.fitRevision===undefined?'initial':data.fitRevision);
+          if(fitNextL!==fitKey){ var bb=[]; (data.segments||[]).forEach(function(sg){(sg.coordinates||[]).forEach(function(c){bb.push([c.latitude,c.longitude]);});}); if(bb.length>1){ fitKey=fitNextL; mapL.fitBounds(bb,{padding:[44,44]}); } } }
         if(data.mapFocus && data.mapFocus.id!==mapFocusIdL){ mapFocusIdL=data.mapFocus.id; mapL.setView([data.mapFocus.coordinate.latitude,data.mapFocus.coordinate.longitude], data.mapFocus.zoom); }
       };
       post({type:'ready'});
@@ -492,6 +504,7 @@ const WebMapLibreImpl: React.FC<Props> = (props) => {
   const userDotRef = useRef<any>(null);
   const focusRef = useRef<number | undefined>(undefined);
   const mapFocusIdRef = useRef<number | undefined>(undefined);
+  const fitKeyRef = useRef("");
   const latestProps = useRef(props); latestProps.current = props;
   const style = useMemo(() => resolveMapStyle(styleEnv()), []);
 
@@ -539,10 +552,14 @@ const WebMapLibreImpl: React.FC<Props> = (props) => {
       mapFocusIdRef.current = data.mapFocus.id;
       map.flyTo({ center: [data.mapFocus.coordinate.longitude, data.mapFocus.coordinate.latitude], zoom: data.mapFocus.zoom });
     }
-    if (data.fitToRoute) {
+    // Cadrage explicite : une seule fois par fitRevision, jamais à chaque retouche du tracé.
+    if (!data.fitToRoute) fitKeyRef.current = "";
+    else {
+      const fitNextKey = String(data.fitRevision === undefined ? "initial" : data.fitRevision);
       const coords: [number, number][] = [];
       (data.segments || []).forEach((s) => (s.coordinates || []).forEach((c) => coords.push([c.longitude, c.latitude])));
-      if (coords.length > 1) {
+      if (coords.length > 1 && fitKeyRef.current !== fitNextKey) {
+        fitKeyRef.current = fitNextKey;
         const b = coords.reduce((acc, c) => { acc[0][0] = Math.min(acc[0][0], c[0]); acc[0][1] = Math.min(acc[0][1], c[1]); acc[1][0] = Math.max(acc[1][0], c[0]); acc[1][1] = Math.max(acc[1][1], c[1]); return acc; }, [[999, 999], [-999, -999]]);
         map.fitBounds(b, { padding: 44, animate: false });
       }
@@ -575,7 +592,7 @@ const WebMapLibreImpl: React.FC<Props> = (props) => {
     if (data.locationFocus && data.locationFocus.id !== focusRef.current) {
       focusRef.current = data.locationFocus.id;
       const c = data.locationFocus.coordinate;
-      map.flyTo({ center: [c.longitude, c.latitude], zoom: 17 });
+      map.flyTo({ center: [c.longitude, c.latitude], zoom: data.locationFocus.zoom || FOCUS_DEFAULT_ZOOM });
     }
   }, []);
 
@@ -682,12 +699,19 @@ export const DoggoMap: React.FC<Props> = (props) => {
   const gps = useLiveMapLocation();
   const [focus, setFocus] = useState<MapProps['locationFocus']>();
   const pendingFocus = useRef(false);
+  const autoFocused = useRef(false);
   useEffect(() => {
     if (pendingFocus.current && gps.coordinate && gps.status === 'live') {
       pendingFocus.current = false;
-      setFocus(previous => ({ id: (previous?.id || 0) + 1, coordinate: gps.coordinate! }));
+      setFocus(previous => ({ id: (previous?.id || 0) + 1, coordinate: gps.coordinate!, zoom: previous?.zoom }));
     }
   }, [gps.coordinate, gps.status]);
+  // L'ouverture (app ou création d'une balade) atterrit sur la position GPS, une seule fois.
+  useEffect(() => {
+    if (autoFocused.current || !props.focusUserOnLoad || gps.status !== 'live' || !gps.coordinate) return;
+    autoFocused.current = true;
+    setFocus(previous => ({ id: (previous?.id || 0) + 1, coordinate: gps.coordinate!, zoom: props.focusUserZoom || FOCUS_DEFAULT_ZOOM }));
+  }, [props.focusUserOnLoad, props.focusUserZoom, gps.coordinate, gps.status]);
   const locate = () => {
     if (gps.coordinate) setFocus(previous => ({ id: (previous?.id || 0) + 1, coordinate: gps.coordinate! }));
     if (gps.status !== 'live') {

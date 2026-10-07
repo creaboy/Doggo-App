@@ -689,6 +689,51 @@ test('la WebView utilise le style vectoriel CARTO Voyager quand une clé CARTO e
   assert.doesNotMatch(html, /styles\/liberty/);
 });
 
+function readSource(...parts) {
+  return fs.readFileSync(path.join(__dirname, '..', ...parts), 'utf8');
+}
+
+// Le cadrage de la boucle est explicite : une seule fois par fitRevision, et jamais
+// à chaque retouche du tracé (c'est ce qui faisait sauter la carte en édition).
+test('le cadrage suit fitRevision et ne se répète pas à chaque édition (tous les fonds)', () => {
+  const { html } = buildNativeMapHtml();
+  assert.match(html, /if\(!data\.fitToRoute\) fitKey='';/);
+  assert.match(html, /fitRevision===undefined\?'initial':data\.fitRevision/);
+  assert.match(html, /if\(coords\.length>1 && fitNext!==fitKey\)/);
+
+  const doggoMap = readSource('src', 'DoggoMap.tsx');
+  // Web MapLibre : clé mémorisée par référence, remise à zéro quand le cadrage se désactive.
+  assert.match(doggoMap, /if \(!data\.fitToRoute\) fitKeyRef\.current = "";/);
+  assert.match(doggoMap, /if \(coords\.length > 1 && fitKeyRef\.current !== fitNextKey\)/);
+  // Le changement de fitRevision doit redéclencher le rendu côté React.
+  assert.match(doggoMap, /\[props\.segments, props\.markers, props\.selectedSegmentIndex, props\.onSegmentPress, props\.fitToRoute, props\.fitRevision, renderLayers\]/);
+
+  const native = readSource('src', 'NativeGoogleMap.native.tsx');
+  assert.match(native, /if \(!data\.fitToRoute\) \{ fitKey\.current = ''; return; \}/);
+  assert.match(native, /if \(coords\.length > 1 && fitKey\.current !== key\)/);
+
+  const hosted = readSource('..', 'backend', 'maps_view.html');
+  assert.match(hosted, /if \(!data\.fitToRoute\) fitKey='';/);
+  assert.match(hosted, /if \(count>1 && nextFit!==fitKey\)/);
+});
+
+// L'ouverture de l'app (explore) et de la création atterrit sur la position GPS, une seule fois.
+test('l\'ouverture centre une seule fois sur la position GPS', () => {
+  const doggoMap = readSource('src', 'DoggoMap.tsx');
+  assert.match(doggoMap, /focusUserOnLoad\?: boolean;/);
+  assert.match(doggoMap, /if \(autoFocused\.current \|\| !props\.focusUserOnLoad \|\| gps\.status !== 'live' \|\| !gps\.coordinate\) return;/);
+  assert.match(doggoMap, /autoFocused\.current = true;/);
+
+  const create = readSource('app', '(tabs)', 'create.tsx');
+  assert.match(create, /focusUserOnLoad=\{!c\.draft\.start\}/);
+  assert.match(create, /fitRevision=\{isClosed \? 1 : 0\}/);
+  assert.doesNotMatch(create, /getCurrentPositionAsync/);
+
+  const explore = readSource('app', '(tabs)', 'explore.tsx');
+  assert.match(explore, /focusUserOnLoad/);
+  assert.match(explore, /focusUserZoom=\{14\}/);
+});
+
 async function run() {
   let passed = 0;
   const failures = [];

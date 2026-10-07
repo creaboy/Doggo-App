@@ -8,4 +8,8 @@ export const googleMapStyle = [
   { featureType: 'poi.park', elementType: 'geometry', stylers: [{ saturation: -50 }, { lightness: 12 }] },
   { featureType: 'poi.business', stylers: [{ visibility: 'on' }] },
 ];
+// Camera helpers shared by every map backend.
+export const FOCUS_DEFAULT_ZOOM = 17;
+export const zoomToDelta = (zoom: number) => 360 / Math.pow(2, zoom);
+
 export const mapColors = { free: colors.success, caution: colors.warning, leash: colors.error, outline: colors.surfaceSecondary, location: colors.location, locationStale: colors.muted };

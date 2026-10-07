@@ -1,8 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { View, Text, Pressable, TextInput, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform, Modal } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import * as Location from 'expo-location';
 import { colors, spacing } from '../../src/theme';
 import { DoggoMap } from '../../src/DoggoMap';
 import { useAuth } from '../../src/AuthContext';
@@ -15,6 +14,10 @@ import { RoutePreview } from '../../src/create/RoutePreview';
 import { styles } from '../../src/create/styles';
 import { SegmentEditor } from '../../src/create/SegmentEditor';
 
+// La carte s'ouvre sur la position GPS (focusUserOnLoad), puis ne se recadre plus jamais seule :
+// le cadrage passe uniquement par fitToRoute/fitRevision.
+const MAP_DEFAULT_REGION = { latitude: 48.85, longitude: 2.35, latitudeDelta: .025, longitudeDelta: .025 };
+
 export default function CreateScreen() {
   const { user } = useAuth();
   const router = useRouter();
@@ -26,19 +29,6 @@ export default function CreateScreen() {
   const [difficulty, setDifficulty] = useState('easy');
   const [dogFreedom, setDogFreedom] = useState('free');
   const [duration, setDuration] = useState('30');
-  const [initialRegion, setInitialRegion] = useState({ latitude: 48.85, longitude: 2.35, latitudeDelta: .025, longitudeDelta: .025 });
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const permission = await Location.requestForegroundPermissionsAsync();
-        if (permission.status !== 'granted') return;
-        const loc = await Location.getCurrentPositionAsync({});
-        if (!cancelled) setInitialRegion({ latitude: loc.coords.latitude, longitude: loc.coords.longitude, latitudeDelta: .015, longitudeDelta: .015 });
-      } catch { /* GPS recording reports permission errors explicitly when requested. */ }
-    })();
-    return () => { cancelled = true; };
-  }, []);
   const totals = stats(c.draft);
   const isClosed = closed(c.draft);
   const markers = routeMarkers(c.draft).map(m => ({ ...m,
@@ -65,10 +55,12 @@ export default function CreateScreen() {
       </Pressable>)}</View>
       {!!c.error && !c.preview && !c.finishOpen && <Text testID="create-route-alert" style={styles.error} accessibilityRole="alert">{c.error}</Text>}
     </View>
-    <View style={styles.map}><DoggoMap testID="create-map" initialRegion={isClosed ? regionFor(c.draft) : initialRegion}
+    <View style={styles.map}><DoggoMap testID="create-map" initialRegion={isClosed ? regionFor(c.draft) : MAP_DEFAULT_REGION}
       segments={c.draft.legs.map(l => ({ ...l, pending: !l.snapped }))} markers={markers} onPress={c.mode === 'draw' && !c.locked ? c.tap : undefined}
       onSegmentPress={c.selectSegment} selectedSegmentIndex={c.selection?.index}
-      showsUserLocation userCoordinate={c.recorder.position} fitToRoute={isClosed && !c.recorder.recording} /></View>
+      showsUserLocation userCoordinate={c.recorder.position}
+      focusUserOnLoad={!c.draft.start} focusUserZoom={17}
+      fitToRoute={isClosed && !c.recorder.recording} fitRevision={isClosed ? 1 : 0} /></View>
     <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: insets.bottom + spacing.xl }}>
       <View style={styles.section}>
         <Text testID="route-status" style={isClosed ? styles.notice : styles.hint}>{c.recorder.recording ? 'Balade en cours · seul le bouton Terminer arrête le GPS' : isClosed ? 'Boucle fermée · départ = arrivée' : 'Le premier point est votre départ. Revenez-y pour former une boucle.'}</Text>

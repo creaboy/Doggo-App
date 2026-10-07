@@ -32,7 +32,7 @@ function updateLocation() {
     canvas.removeAttribute('data-user-latitude'); canvas.removeAttribute('data-user-longitude');
   }
   if(data.locationFocus && point(data.locationFocus.coordinate) && data.locationFocus.id!==focusedLocationId){
-    focusedLocationId=data.locationFocus.id; map.panTo(ll(data.locationFocus.coordinate)); map.setZoom(17);
+    focusedLocationId=data.locationFocus.id; map.panTo(ll(data.locationFocus.coordinate)); map.setZoom(data.locationFocus.zoom || 17);
   }
 }
 function render() {
@@ -56,9 +56,10 @@ function render() {
   });
   (data.markers || []).forEach(m => {
     if (!point(m.coordinate)) return;
+    const wp = /^wp-(\d+)$/.exec(m.id);
     const marker = new google.maps.Marker({map,position:ll(m.coordinate),title:m.label || '',zIndex:20,
-      icon:{path:google.maps.SymbolPath.CIRCLE,scale:m.id==='start' ? 12 : 9,fillColor:m.color || data.colors.free,fillOpacity:1,strokeColor:data.colors.outline,strokeWeight:3},
-      label:m.id==='start' ? {text:'D',color:data.colors.outline,fontSize:'11px',fontWeight:'700'} : undefined});
+      icon:{path:google.maps.SymbolPath.CIRCLE,scale:wp ? 12 : 9,fillColor:m.color || data.colors.free,fillOpacity:1,strokeColor:data.colors.outline,strokeWeight:3},
+      label:wp ? {text:wp[1],color:data.colors.outline,fontSize:'11px',fontWeight:'700'} : undefined});
     marker.addListener('click',()=>post({type:'markerPress',id:m.id})); layers.push(marker);
   });
   const r=data.initialRegion;
@@ -67,8 +68,12 @@ function render() {
     regionKey=nextKey;
     map.fitBounds({south:r.latitude-r.latitudeDelta/2,north:r.latitude+r.latitudeDelta/2,west:r.longitude-r.longitudeDelta/2,east:r.longitude+r.longitudeDelta/2},24);
   }
-  const nextFit=JSON.stringify([count,data.segments?.[0]?.coordinates?.[0],data.fitRevision]);
-  if (data.fitToRoute && count>1 && nextFit!==fitKey) { map.fitBounds(bounds,44); fitKey=nextFit; }
+  // Cadrage explicite : une seule fois par fitRevision, jamais à chaque retouche du tracé.
+  if (!data.fitToRoute) fitKey='';
+  else {
+    const nextFit=String(data.fitRevision===undefined ? 'initial' : data.fitRevision);
+    if (count>1 && nextFit!==fitKey) { map.fitBounds(bounds,44); fitKey=nextFit; }
+  }
   const canvas=document.getElementById('map');
   canvas.setAttribute('data-route-segments', String((data.segments || []).length));
   canvas.setAttribute('data-editable', String(!!data.editable));

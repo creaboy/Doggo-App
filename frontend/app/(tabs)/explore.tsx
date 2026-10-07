@@ -182,6 +182,8 @@ export default function ExploreScreen() {
             markers={markers}
             mapFocus={mapFocus}
             onRegionChange={setViewport}
+            focusUserOnLoad
+            focusUserZoom={14}
             style={{ flex: 1 }}
           />
           {/* Bouton « Rechercher dans cette zone » */}

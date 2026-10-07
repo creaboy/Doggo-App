@@ -49,6 +49,14 @@ Explorer carte/liste, filtres/recherche, favoris, alertes proches, récapitulati
 - Aucun défaut fonctionnel restant reproduit dans les contrôles réalisés. Les erreurs de saisie/hors réseau et indisponibilités externes restent signalées, avec données du brouillon préservées et publication bloquée si non ajustée/non fermée.
 - Les deux balades créées par la vérification directe (titres TEST boucle segments validés et TEST GPS20s boucle divisée, Berlin) sont retirées après contrôle ; aucune autre balade ni donnée historique n’est supprimée.
 
+## Itération cadrage explicite + ouverture GPS (branche `arena/01a09b31-doggo-app`)
+- `DoggoMap` : le cadrage de la boucle passe uniquement par `fitToRoute`/`fitRevision` et n’a lieu qu’**une fois par révision** ; il est remis à zéro quand `fitToRoute` repasse à faux. Appliqué aux quatre fonds : MapLibre web, MapLibre embarqué dans la WebView, repli Leaflet de la WebView, carte Google hébergée (`backend/maps_view.html`) et SDK natif (`NativeGoogleMap.native.tsx`). Corrige le recadrage de la carte à chaque retouche du tracé (suppression d’un point notamment).
+- Ouverture sur la position GPS : nouveaux props `focusUserOnLoad`/`focusUserZoom`. La carte se centre **une seule fois** sur la première position GPS live (explore : zoom 14, création : zoom 17) au lieu du centre par défaut ; un refus ou une attente du GPS conserve le cadrage habituel. `locationFocus` accepte désormais un `zoom` optionnel, honoré par tous les fonds. L’effet `getCurrentPositionAsync` de l’écran de création (redondant et source de rechargement de la WebView) est retiré.
+- Carte Google hébergée : les points de passage `wp-N` affichent enfin leur numéro (l’ancien libellé ne testait que l’identifiant `start`, jamais émis) ; les autres repères gardent l’épingle Google.
+- SDK natif Google : les points de passage numérotés utilisent la même pastille ronde numérotée que les autres fonds (l’épingle native ne sait pas afficher de numéro).
+- Tests déterministes TypeScript : **28/28** (`frontend/tests/pure_ts_modules_runner.cjs`, dont 2 nouveaux sur le cadrage par révision et le centrage unique à l’ouverture). `tsc --noEmit` sans erreur, `expo export --platform web` OK (8,2 Mo).
+- L’édition des points (points numérotés, sélection, suppression avec recalcul, « Ajouter un point ici ») restait celle déjà livrée sur cette branche les 20–22 septembre : rien de dupliqué n’a été réintroduit depuis `main`.
+
 ## Priorités
 ### P0
 - Aucun blocage connu après les vérifications ci-dessus. Les rapports6/7 conservent l’historique des essais inconclusifs, résolus par les vérifications directes160657/160914.
