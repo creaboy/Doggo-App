@@ -32,7 +32,7 @@ function updateLocation() {
     canvas.removeAttribute('data-user-latitude'); canvas.removeAttribute('data-user-longitude');
   }
   if(data.locationFocus && point(data.locationFocus.coordinate) && data.locationFocus.id!==focusedLocationId){
-    focusedLocationId=data.locationFocus.id; map.panTo(ll(data.locationFocus.coordinate)); map.setZoom(17);
+    focusedLocationId=data.locationFocus.id; map.panTo(ll(data.locationFocus.coordinate)); map.setZoom(data.locationFocus.zoom || 17);
   }
 }
 function render() {
@@ -56,9 +56,10 @@ function render() {
   });
   (data.markers || []).forEach(m => {
     if (!point(m.coordinate)) return;
-    const marker = new google.maps.Marker({map,position:ll(m.coordinate),title:m.label || '',zIndex:20,
-      icon:{path:google.maps.SymbolPath.CIRCLE,scale:m.id==='start' ? 12 : 9,fillColor:m.color || data.colors.free,fillOpacity:1,strokeColor:data.colors.outline,strokeWeight:3},
-      label:m.id==='start' ? {text:'D',color:data.colors.outline,fontSize:'11px',fontWeight:'700'} : undefined});
+    const selected = m.pointIndex !== undefined && m.pointIndex === data.selectedPointIndex;
+    const marker = new google.maps.Marker({map,position:ll(m.coordinate),title:m.label || '',zIndex:selected ? 30 : 20,
+      icon:{path:google.maps.SymbolPath.CIRCLE,scale:selected ? 15 : 11,fillColor:m.color || data.colors.free,fillOpacity:1,strokeColor:selected ? data.colors.selected : data.colors.outline,strokeWeight:selected ? 4 : 3},
+      label:m.badge ? {text:m.badge,color:data.colors.outline,fontSize:'11px',fontWeight:'700'} : undefined});
     marker.addListener('click',()=>post({type:'markerPress',id:m.id})); layers.push(marker);
   });
   const r=data.initialRegion;
@@ -67,12 +68,18 @@ function render() {
     regionKey=nextKey;
     map.fitBounds({south:r.latitude-r.latitudeDelta/2,north:r.latitude+r.latitudeDelta/2,west:r.longitude-r.longitudeDelta/2,east:r.longitude+r.longitudeDelta/2},24);
   }
-  const nextFit=JSON.stringify([count,data.segments?.[0]?.coordinates?.[0],data.fitRevision]);
-  if (data.fitToRoute && count>1 && nextFit!==fitKey) { map.fitBounds(bounds,44); fitKey=nextFit; }
+  // Framing is explicit: once per fitRevision, never on every edit.
+  if (!data.fitToRoute) fitKey='';
+  else {
+    const nextFit=String(data.fitRevision===undefined ? 'initial' : data.fitRevision);
+    if (count>1 && nextFit!==fitKey) { map.fitBounds(bounds,44); fitKey=nextFit; }
+  }
   const canvas=document.getElementById('map');
   canvas.setAttribute('data-route-segments', String((data.segments || []).length));
   canvas.setAttribute('data-editable', String(!!data.editable));
   canvas.setAttribute('data-selected-segment', String(data.selectedSegmentIndex ?? ''));
+  canvas.setAttribute('data-selected-point', String(data.selectedPointIndex ?? ''));
+  canvas.setAttribute('data-route-points', String((data.markers || []).length));
   canvas.setAttribute('aria-label', 'Carte Doggo · '+(data.segments || []).length+' segments');
   updateLocation();
 }

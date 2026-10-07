@@ -3,15 +3,19 @@ import { View, Text, Modal, Pressable, ScrollView, ActivityIndicator } from 'rea
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DoggoMap, LatLng } from '../DoggoMap';
 import { colors, spacing } from '../theme';
-import { Draft, Freedom, legDistance, regionFor, routeMarkers, stats } from '../routeDraft';
+import { Draft, Freedom, legDistance, regionFor, stats } from '../routeDraft';
 import { SegmentPicker } from './SegmentPicker';
 import { styles } from './styles';
-import { SegmentEditor, SegmentSelection } from './SegmentEditor';
+import { SegmentEditor } from './SegmentEditor';
+import { PointEditor } from './PointEditor';
+import { draftMarkers } from './draftMarkers';
+import type { DraftSelection } from './selection';
 
-export function RoutePreview({ open, draft, duration, title, error, busy, onBack, onPublish, onFreedom, selection, onSelect, onSplit, onCloseSelection, onUndo, canUndo }: {
+export function RoutePreview({ open, draft, duration, title, error, busy, onBack, onPublish, onFreedom, selection, onSelect, onSelectPoint, onRemovePoint, onInsert, onCloseSelection, onUndo, canUndo }: {
   open: boolean; draft: Draft; duration: string; title: string; error: string; busy: string;
   onBack: () => void; onPublish: () => void; onFreedom: (index: number, value: Freedom) => void;
-  selection: SegmentSelection; onSelect: (index: number, point?: LatLng) => void; onSplit: () => void; onCloseSelection: () => void; onUndo: () => void; canUndo: boolean;
+  selection: DraftSelection | null; onSelect: (index: number, point?: LatLng) => void; onSelectPoint: (index: number) => void;
+  onRemovePoint: () => void; onInsert: () => void; onCloseSelection: () => void; onUndo: () => void; canUndo: boolean;
 }) {
   const insets = useSafeAreaInsets();
   const totals = stats(draft);
@@ -24,7 +28,10 @@ export function RoutePreview({ open, draft, duration, title, error, busy, onBack
         <Text testID="preview-loop-status" style={styles.notice}>Boucle terminée · départ = arrivée</Text>
       </View>
       <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + spacing.xl }}>
-        <View style={styles.map}><DoggoMap testID="preview-map" initialRegion={region} segments={draft.legs} markers={routeMarkers(draft)} fitToRoute onSegmentPress={onSelect} selectedSegmentIndex={selection?.index} /></View>
+        <View style={styles.map}><DoggoMap testID="preview-map" initialRegion={region} segments={draft.legs}
+          markers={draftMarkers(draft, selection, onSelectPoint)} fitToRoute onSegmentPress={onSelect}
+          selectedSegmentIndex={selection?.kind === 'segment' ? selection.index : undefined}
+          selectedPointIndex={selection?.kind === 'point' ? selection.index : undefined} /></View>
         <View style={styles.section}>
           <Text testID="preview-walk-name" style={styles.text}>{title.trim() || 'Balade sans titre · renseignez les détails avant de publier'}</Text>
           <View style={styles.stats}>
@@ -34,9 +41,11 @@ export function RoutePreview({ open, draft, duration, title, error, busy, onBack
           </View>
           <Text testID="preview-start-coordinate" style={styles.hint}>Départ et arrivée : {draft.start?.latitude.toFixed(6)}, {draft.start?.longitude.toFixed(6)} · repère D</Text>
           {generated && <Text testID="generated-return-note" style={styles.notice}>Le retour ajouté par Doggo apparaît en pointillés. Par défaut : attention. Vérifiez son accès sur place.</Text>}
-          <Text testID="preview-edit-instructions" style={styles.hint}>Touchez le tracé à l’endroit souhaité pour modifier une règle ou diviser le segment GPS en deux portions.</Text>
+          <Text testID="preview-edit-instructions" style={styles.hint}>Touchez le tracé ou un point numéroté pour modifier une règle, ajouter un point ou en supprimer un. La carte ne se recadre pas pendant la modification.</Text>
           <SegmentEditor prefix="preview-edit-segment" draft={draft} selection={selection} disabled={!!busy} recording={false}
-            onFreedom={onFreedom} onSplit={onSplit} onClose={onCloseSelection} />
+            onFreedom={onFreedom} onInsert={onInsert} onClose={onCloseSelection} />
+          <PointEditor prefix="preview-edit-point" draft={draft} selection={selection?.kind === 'point' ? selection : null}
+            disabled={!!busy} onRemove={onRemovePoint} onClose={onCloseSelection} />
           <Pressable testID="preview-undo-edit" disabled={!!busy || !canUndo} style={[styles.small, (!canUndo || !!busy) && styles.disabled]} onPress={onUndo}><Text style={styles.text}>Annuler la dernière modification</Text></Pressable>
           <Text testID="preview-segment-legend" style={styles.hint}>Vert : libre · orange : prudence · rouge : laisse. Les couleurs indiquent les règles renseignées, pas une autorisation officielle.</Text>
           {draft.legs.map((leg, i) => <View key={leg.id || i} testID={`preview-segment-${i}`} style={styles.card}>

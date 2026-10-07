@@ -148,6 +148,8 @@ export default function ExploreScreen() {
             testID="explore-map"
             initialRegion={region}
             markers={markers}
+            focusUserOnLoad
+            focusUserZoom={14}
             style={{ flex: 1 }}
           />
           {/* Horizontal walk carousel */}

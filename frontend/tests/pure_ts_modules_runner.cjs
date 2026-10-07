@@ -456,6 +456,112 @@ test('restoreFinalGpsPosition adds <=20m connector and rejects far endpoint', ()
   assert.throws(() => gpsDraft.restoreFinalGpsPosition(farDraft), /trop loin du GPS/);
 });
 
+// route editing: ordered points, removal rebuild, insertion renumbering
+function drawnLeg(id, from, to, freedom = 'free') {
+  return { id, source: 'draw', snapped: true, freedom, coordinates: [from, to] };
+}
+
+function orderedDraft() {
+  const start = pt(48.8566, 2.3522);
+  const p2 = offsetMeters(start, 40, 0);
+  const p3 = offsetMeters(start, 40, 60);
+  const p4 = offsetMeters(start, 0, 60);
+  return { start, p2, p3, p4 };
+}
+
+test('draftPoints numbers the ordered points and never lists the closing point twice', () => {
+  const { routeDraft } = loadCore();
+  const { start, p2, p3, p4 } = orderedDraft();
+  const open = { start, legs: [drawnLeg('a', start, p2), drawnLeg('b', p2, p3, 'leash'), drawnLeg('c', p3, p4)] };
+  const points = routeDraft.draftPoints(open);
+  assert.equal(points.length, 4);
+  assert.deepEqual(points.map((p) => p.index), [0, 1, 2, 3]);
+  assert.equal(points[0].start, true);
+  assert.deepEqual(points[2].coordinate, p3);
+  assert.equal(routeDraft.closed(open), false);
+
+  const loop = { ...open, legs: [...open.legs, { id: 'r', source: 'return', generated: true, snapped: true, freedom: 'caution', coordinates: [p4, start] }] };
+  assert.equal(routeDraft.closed(loop), true);
+  assert.equal(routeDraft.draftPoints(loop).length, 4);
+  assert.deepEqual(routeDraft.draftPoints(loop).at(-1).coordinate, p4);
+});
+
+test('removeVertex rebuilds the segment in place, keeps the point order and the closure', () => {
+  const { routeDraft } = loadCore();
+  const { start, p2, p3, p4 } = orderedDraft();
+  const legs = [drawnLeg('a', start, p2), drawnLeg('b', p2, p3, 'leash'), drawnLeg('c', p3, p4)];
+  const loop = { start, legs: [...legs, { id: 'r', source: 'return', generated: true, snapped: true, freedom: 'caution', coordinates: [p4, start] }] };
+
+  const next = routeDraft.removeVertex(loop, 2);
+  assert.equal(next.legs.length, 3);
+  const merged = next.legs[1];
+  assert.equal(merged.source, 'draw');
+  assert.equal(merged.snapped, false);
+  assert.equal(merged.freedom, 'leash');
+  assert.deepEqual(merged.coordinates, [p2, p4]);
+  assert.notEqual(merged.id, 'b');
+  assert.equal(routeDraft.closed(next), true);
+  assert.deepEqual(routeDraft.draftPoints(next).map((p) => p.coordinate), [start, p2, p4]);
+  assert.equal(loop.legs.length, 4);
+  assert.deepEqual(loop.legs[1].coordinates, [p2, p3]);
+
+  // Removing the junction before the generated return rebuilds one closed segment.
+  const beforeReturn = routeDraft.removeVertex(loop, 3);
+  assert.equal(beforeReturn.legs.length, 3);
+  assert.equal(routeDraft.closed(beforeReturn), true);
+  assert.deepEqual(beforeReturn.legs.at(-1).coordinates.at(-1), start);
+  assert.deepEqual(routeDraft.draftPoints(beforeReturn).map((p) => p.coordinate), [start, p2, p3]);
+});
+
+test('removeVertex refuses the start point and joins GPS runs without rerouting', () => {
+  const { routeDraft } = loadCore();
+  const start = pt(48.8566, 2.3522);
+  const g1 = offsetMeters(start, 20, 0);
+  const g2 = offsetMeters(start, 40, 0);
+  const g3 = offsetMeters(start, 60, 0);
+  const raw = [{ ...start, timestamp: 1, accuracy: 5 }];
+  const draft = {
+    start, rawGps: raw,
+    legs: [drawnLeg('d', start, g1),
+      { id: 'g1', source: 'gps', freedom: 'free', snapped: true, sealed: true, coordinates: [g1, g2] },
+      { id: 'g2', source: 'gps', freedom: 'free', snapped: true, sealed: true, coordinates: [g2, g3] }],
+  };
+  assert.throws(() => routeDraft.removeVertex(draft, 0), /départ/);
+  assert.equal(routeDraft.draftPoints(draft)[2].internal, true);
+
+  const joined = routeDraft.removeVertex(draft, 2);
+  assert.equal(joined.legs.length, 2);
+  assert.equal(joined.legs[1].source, 'gps');
+  assert.equal(joined.legs[1].snapped, true);
+  assert.deepEqual(joined.legs[1].coordinates, [g1, g2, g3]);
+  assert.deepEqual(joined.rawGps, raw);
+
+  // The open end has no following point: only the extra segment is dropped.
+  const dropped = routeDraft.removeVertex(draft, 3);
+  assert.deepEqual(dropped.legs.map((l) => l.id), ['d', 'g1']);
+  assert.equal(routeDraft.draftPoints(dropped).length, 3);
+  assert.deepEqual(draft.legs.map((l) => l.id), ['d', 'g1', 'g2']);
+});
+
+test('adding a point on a segment inserts it in order and renumbers the following points', () => {
+  const { routeDraft, segmentEditing } = loadCore();
+  const { start, p2, p3, p4 } = orderedDraft();
+  const draft = { start, legs: [drawnLeg('a', start, p2), drawnLeg('b', p2, p3), drawnLeg('c', p3, p4)] };
+  assert.deepEqual(routeDraft.draftPoints(draft).map((p) => p.coordinate), [start, p2, p3, p4]);
+
+  // Touch the middle of the segment linking point 2 and point 3.
+  const click = offsetMeters(start, 40, 30);
+  const out = segmentEditing.splitLeg(draft, 1, click);
+  const points = routeDraft.draftPoints(out);
+  assert.equal(points.length, 5);
+  assert.equal(routeDraft.meters(points[2].coordinate, click) < 1, true);
+  assert.deepEqual(points[3].coordinate, p3);
+  assert.deepEqual(points[4].coordinate, p4);
+  assert.equal(out.legs.length, 4);
+  assert.deepEqual(out.legs[1].coordinates.at(-1), out.legs[2].coordinates[0]);
+  assert.equal(draft.legs.length, 3);
+});
+
 async function run() {
   let passed = 0;
   const failures = [];

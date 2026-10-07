@@ -49,6 +49,14 @@ Explorer carte/liste, filtres/recherche, favoris, alertes proches, récapitulati
 - Aucun défaut fonctionnel restant reproduit dans les contrôles réalisés. Les erreurs de saisie/hors réseau et indisponibilités externes restent signalées, avec données du brouillon préservées et publication bloquée si non ajustée/non fermée.
 - Les deux balades créées par la vérification directe (titres TEST boucle segments validés et TEST GPS20s boucle divisée, Berlin) sont retirées après contrôle ; aucune autre balade ni donnée historique n’est supprimée.
 
+## Itération ouverture GPS + édition de points (implémentée, vérifiée par tests purs + compilation)
+- `DoggoMap` : `initialRegion` n’est appliqué qu’à la création de la carte. Un changement de prop ne recentre plus jamais la caméra ; `fitToRoute`/`fitRevision` cadrent explicitement (une fois par `fitRevision`, remise à zéro si `fitToRoute` passe à faux). Corrige le saut vers le point GPS lors d’une suppression de point.
+- Ouverture de l’application : `explore` (et l’écran de création) centre une fois sur la première position GPS live via `focusUserOnLoad` (+ `focusUserZoom`), au lieu du centre par défaut Paris. Un refus/mise en attente du GPS laisse le cadrage habituel.
+- `routeDraft.ts` : `draftPoints` (points ordonnés, le point de fermeture n’est pas dupliqué) et `removeVertex` (fusion des deux segments voisins ; les segments dessinés à la main sont recréés par le routeur piéton, les tracés GPS sont joints sans reroutage ; le départ reste immuable). `routeMarkers` remplacé par `src/create/draftMarkers.ts` (marqueurs numérotés, sélection).
+- Sélection typée `segment | point` (`src/create/selection.ts`), retour visuel : segment épaissi avec liseré, point agrandi avec anneau bleu, panneau contextuel `SegmentEditor` (liberté + « Ajouter un point ici ») et `PointEditor` (« Supprimer ce point »).
+- Ajouter un point sur un segment insère le point dans l’ordre et renumérote les suivants (ex. : point 2‑3 → le nouveau devient 3, l’ancien 3 devient 4). La suppression d’un point recrée le segment sans lui et ne déplace pas la carte.
+- Vérifications : `tsc --noEmit` sans erreur, `expo export --platform web` OK, tests purs TypeScript **19/19**, scripts inline Leaflet/Google validés syntaxiquement et attributs `data-selected-point`/`data-route-points` exposés. Pas de test navigateur ni physique dans cette itération.
+
 ## Priorités
 ### P0
 - Aucun blocage connu après les vérifications ci-dessus. Les rapports6/7 conservent l’historique des essais inconclusifs, résolus par les vérifications directes160657/160914.

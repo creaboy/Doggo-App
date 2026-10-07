@@ -58,9 +58,43 @@ export function regionFor(d: Draft) {
     latitudeDelta: Math.max(.001, (north - south) * 1.5), longitudeDelta: Math.max(.001, (east - west) * 1.5) };
 }
 export const formatMeters = (value: number) => value > 20 && value < 21 ? `${(Math.ceil(value * 10) / 10).toFixed(1)} m` : value < 1000 ? `${Math.round(value)} m` : `${(value / 1000).toFixed(2)} km`;
-export function routeMarkers(d: Draft) {
+export type DraftPoint = { index: number; coordinate: LatLng; start: boolean; internal: boolean };
+// Ordered points of the draft: the start, then the end of every segment.
+// The closing point of a loop IS the start point, so it is not listed a second time.
+// `internal` marks junctions that only exist inside one continuous GPS run (window boundaries).
+export function draftPoints(d: Draft): DraftPoint[] {
   if (!d.start) return [];
-  const end = lastPoint(d)!;
-  return [{ id: 'start', coordinate: d.start, label: closed(d) ? 'Départ / arrivée · boucle fermée' : 'Départ' },
-    ...(!closed(d) && d.legs.length ? [{ id: 'end', coordinate: end, label: 'Fin actuelle' }] : [])];
+  const points: DraftPoint[] = [{ index: 0, coordinate: d.start, start: true, internal: false }];
+  d.legs.forEach((leg, i) => {
+    const end = leg.coordinates.at(-1);
+    if (!end) return;
+    points.push({ index: points.length, coordinate: end, start: false,
+      internal: leg.source === 'gps' && d.legs[i + 1]?.source === 'gps' });
+  });
+  if (points.length > 1 && closed(d)) points.pop();
+  return points;
+}
+// Removes one point and rebuilds the segment it used to split: two consecutive legs become one.
+// Hand drawn segments are rebuilt by the pedestrian router, exactly like a new tap.
+// The start point stays fixed, and the draft is returned unchanged when the point cannot go.
+export function removeVertex(d: Draft, index: number): Draft {
+  const points = draftPoints(d);
+  const point = points[index];
+  if (!point || point.index !== index) throw new Error('Ce point n’existe plus.');
+  if (point.start) throw new Error('Le point de départ reste fixe : il ne peut pas être supprimé.');
+  if (index === points.length - 1 && !closed(d)) return { ...d, legs: d.legs.slice(0, -1) };
+  const before = d.legs[index - 1];
+  const after = d.legs[index];
+  if (!before || !after) throw new Error('Ce point ne peut pas être supprimé.');
+  const from = before.coordinates[0];
+  const to = after.coordinates.at(-1)!;
+  if (!from || !to) throw new Error('Ce point ne peut pas être supprimé.');
+  if (meters(from, to) < 0.5) throw new Error('Les points voisins sont confondus : supprimez plutôt le doublon.');
+  const rebuilt = before.source === 'draw' && after.source === 'draw';
+  const merged: Leg = rebuilt
+    ? { id: legId(), coordinates: [from, to], freedom: before.freedom, source: 'draw', snapped: false }
+    : { ...before, id: legId(), coordinates: [...before.coordinates, ...after.coordinates.slice(1)],
+      gpsSamples: before.gpsSamples || after.gpsSamples ? [...(before.gpsSamples || []), ...(after.gpsSamples || [])] : undefined,
+      snapped: !!(before.snapped && after.snapped), sealed: undefined };
+  return { ...d, legs: [...d.legs.slice(0, index - 1), merged, ...d.legs.slice(index + 1)] };
 }

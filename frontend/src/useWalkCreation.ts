@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react';
 import { api } from './api';
 import type { LatLng } from './DoggoMap';
-import { addPoint, closed, Draft, emptyDraft, Freedom, rawGapToStart, usable, withinClosingDistance } from './routeDraft';
+import { addPoint, closed, Draft, emptyDraft, Freedom, rawGapToStart, removeVertex, usable, withinClosingDistance } from './routeDraft';
+import type { DraftSelection } from './create/selection';
 import { completeLoop, requestPath, snapDraft } from './routeCompletion';
 import { useRouteRecorder } from './useRouteRecorder';
 import { useGpsSnapping } from './useGpsSnapping';
@@ -14,7 +15,7 @@ export function useWalkCreation() {
   const history = useRef<Draft[]>([]);
   const [mode, setMode] = useState<'draw' | 'record'>('draw');
   const [freedom, setFreedom] = useState<Freedom>('free');
-  const [selection, setSelection] = useState<{ index: number; point: LatLng | null } | null>(null);
+  const [selection, setSelection] = useState<DraftSelection | null>(null);
   const [preview, setPreview] = useState(false);
   const [finishOpen, setFinishOpen] = useState(false);
   const [error, setError] = useState('');
@@ -113,9 +114,27 @@ export function useWalkCreation() {
     if (working.current || gps.busy) return;
     commit({ ...current.current, legs: current.current.legs.map((leg, i) => i === index ? { ...leg, freedom: value } : leg) }, !recorder.recording);
   };
-  const selectSegment = (index: number, point?: LatLng) => { setSelection({ index, point: point || null }); setError(''); };
+  const selectSegment = (index: number, point?: LatLng) => { setSelection({ kind: 'segment', index, point: point || null }); setError(''); setNotice(''); };
+  const selectPoint = (index: number) => { setSelection({ kind: 'point', index }); setError(''); setNotice(''); };
+  // Removing a point stays where the user is: no camera move, the segment is rebuilt in place.
+  const removePoint = () => {
+    if (selection?.kind !== 'point' || locked || gps.busy || working.current) return;
+    const index = selection.index;
+    void run('Suppression du point…', async () => {
+      let next = removeVertex(current.current, index);
+      const rebuilt = next.legs[index - 1];
+      // A hand drawn segment is re-routed between its new neighbours; nothing is committed if routing fails.
+      if (rebuilt && rebuilt.source === 'draw' && !rebuilt.snapped) {
+        const coordinates = await requestPath(rebuilt.coordinates);
+        next = { ...next, legs: next.legs.map(l => l.id === rebuilt.id ? { ...l, coordinates, snapped: true } : l) };
+      }
+      commit(next, true);
+      setSelection(null);
+      setNotice(`Point ${index + 1} supprimé · segment recréé`);
+    });
+  };
   const splitSelected = () => {
-    if (!selection?.point || working.current || gps.busy || recorder.recording || recorder.starting) return;
+    if (selection?.kind !== 'segment' || !selection.point || working.current || gps.busy || recorder.recording || recorder.starting) return;
     try { commit(splitLeg(current.current, selection.index, selection.point), true); setSelection(null); setNotice('Segment divisé : chaque portion peut maintenant avoir sa propre règle.'); setError(''); }
     catch (e: any) { setError(e.message); }
   };
@@ -130,7 +149,7 @@ export function useWalkCreation() {
     } finally { working.current = false; setBusy(''); }
   };
   const canUndoInPreview = !!history.current.length && closed(history.current.at(-1)!);
-  return { draft, mode, setMode, freedom, setFreedom, preview, setPreview, gps, selection, selectSegment, setSelection, splitSelected, canUndoInPreview,
+  return { draft, mode, setMode, freedom, setFreedom, preview, setPreview, gps, selection, selectSegment, selectPoint, removePoint, setSelection, splitSelected, canUndoInPreview,
     finishOpen, error, setError, notice, busy, locked, recorder, tap, undo, clear, closeManual, snap,
     start, stop, continueRecording, finishReturn, showPreview, updateFreedom, publish };
 }

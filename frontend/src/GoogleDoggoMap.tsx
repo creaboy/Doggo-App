@@ -18,11 +18,12 @@ export function GoogleDoggoMap(props: MapProps & { fallback: React.ReactNode }) 
   const scene = useMemo(() => ({
     sceneRevision: ++sceneRevision.current,
     initialRegion: props.initialRegion, segments: (props.segments || []).map(({ coordinates, freedom, generated, pending }) => ({ coordinates, freedom, generated, pending })),
-    markers: (props.markers || []).map(({ id, coordinate, color, label }) => ({ id, coordinate, color, label })),
+    markers: (props.markers || []).map(({ id, coordinate, color, label, badge, pointIndex }) => ({ id, coordinate, color, label, badge, pointIndex })),
     fitToRoute: props.fitToRoute, fitRevision: props.fitRevision,
     segmentEditable: !!props.onSegmentPress, selectedSegmentIndex: props.selectedSegmentIndex,
+    selectedPointIndex: props.selectedPointIndex,
     editable: !!props.onPress, colors: mapColors, mapStyle: googleMapStyle,
-  }), [props.initialRegion, props.segments, props.markers, props.fitToRoute, props.fitRevision, props.onPress, props.onSegmentPress, props.selectedSegmentIndex]);
+  }), [props.initialRegion, props.segments, props.markers, props.fitToRoute, props.fitRevision, props.onPress, props.onSegmentPress, props.selectedSegmentIndex, props.selectedPointIndex]);
   const payload = useMemo(() => ({ ...scene, userCoordinate: props.userCoordinate, userAccuracy: props.userAccuracy, locationStale: props.locationStale, locationFocus: props.locationFocus }),
     [scene, props.userCoordinate, props.userAccuracy, props.locationStale, props.locationFocus]);
   useEffect(() => {

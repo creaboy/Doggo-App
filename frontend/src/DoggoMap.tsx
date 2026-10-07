@@ -1,14 +1,16 @@
-import React, { useCallback, useEffect, useRef, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { View, Platform, StyleSheet, Linking } from "react-native";
 import { colors } from "./theme";
 import { GoogleDoggoMap } from "./GoogleDoggoMap";
+import { FOCUS_DEFAULT_ZOOM } from "./mapStyle";
 import { useLiveMapLocation } from "./useLiveMapLocation";
 import { MapLocationControl } from "./MapLocationControl";
 
 // Types
 export type LatLng = { latitude: number; longitude: number };
 export type SegmentInput = { coordinates: LatLng[]; freedom: "free" | "caution" | "leash"; generated?: boolean; pending?: boolean };
-export type MarkerInput = { id: string; coordinate: LatLng; color?: string; label?: string; onPress?: () => void };
+export type MarkerInput = { id: string; coordinate: LatLng; color?: string; label?: string; badge?: string; pointIndex?: number; onPress?: () => void };
+export type Region = { latitude: number; longitude: number; latitudeDelta: number; longitudeDelta: number };
 
 const freedomColor: Record<string, string> = {
   free: colors.success,
@@ -17,7 +19,9 @@ const freedomColor: Record<string, string> = {
 };
 
 export type MapProps = {
-  initialRegion?: { latitude: number; longitude: number; latitudeDelta: number; longitudeDelta: number };
+  // Applied when the map is created. Changing it later never moves the camera:
+  // use `locationFocus` to follow the user and `fitToRoute`/`fitRevision` to frame a route.
+  initialRegion?: Region;
   segments?: SegmentInput[];
   markers?: MarkerInput[];
   onPress?: (c: LatLng) => void;
@@ -29,11 +33,20 @@ export type MapProps = {
   userCoordinate?: LatLng | null;
   userAccuracy?: number | null;
   locationStale?: boolean;
-  locationFocus?: { id: number; coordinate: LatLng };
+  locationFocus?: { id: number; coordinate: LatLng; zoom?: number };
   onSegmentPress?: (index: number, coordinate?: LatLng) => void;
   selectedSegmentIndex?: number;
+  selectedPointIndex?: number;
+  // Center once on the first live GPS fix (app/creation opening). `focusUserZoom` defaults to 17.
+  focusUserOnLoad?: boolean;
+  focusUserZoom?: number;
 };
 type Props = MapProps;
+
+const DEFAULT_REGION: Region = { latitude: 48.85, longitude: 2.35, latitudeDelta: 0.1, longitudeDelta: 0.1 };
+const isSelectedPoint = (m: MarkerInput, selectedPointIndex?: number) =>
+  m.pointIndex !== undefined && m.pointIndex === selectedPointIndex;
+const fitKeyOf = (fitRevision?: number) => String(fitRevision === undefined ? "initial" : fitRevision);
 
 function calcZoom(latDelta: number, lngDelta: number): number {
   const worldLat = 360;
@@ -43,18 +56,16 @@ function calcZoom(latDelta: number, lngDelta: number): number {
 
 // ============ Shared HTML template ============
 
-function buildHtml(
-  region: { latitude: number; longitude: number; latitudeDelta: number; longitudeDelta: number }
-): string {
+function buildHtml(region: Region): string {
   const zoom = calcZoom(region.latitudeDelta, region.longitudeDelta);
   return `<!doctype html><html><head>
 <meta name="viewport" content="initial-scale=1.0,maximum-scale=1.0,user-scalable=no" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <style>html,body,#m{margin:0;padding:0;height:100%;width:100%;background:#F1F4EE;}
-.pin{width:22px;height:22px;border-radius:50%;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.4);box-sizing:border-box;}
+.pin{width:24px;height:24px;border-radius:50%;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.4);box-sizing:border-box;display:flex;align-items:center;justify-content:center;color:#fff;font:700 12px system-ui,sans-serif;}
 .leaflet-container{background:#F1F4EE;}
 </style></head><body>
-<div id="m"></div>
+<div id="m" data-testid="doggo-leaflet"></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 (function(){
@@ -64,6 +75,7 @@ function buildHtml(
   var userMarker = null;
   var accuracyCircle = null;
   var focusId;
+  var fitKey = '';
   map.createPane('doggo-user-location').style.zIndex = '650';
 
   function post(obj){
@@ -79,22 +91,40 @@ function buildHtml(
   window.__renderData = function(data){
     layers.forEach(function(l){ map.removeLayer(l); });
     layers = [];
+    var all = [];
     (data.segments || []).forEach(function(seg,index){
       if (!seg.coordinates || seg.coordinates.length < 2) return;
       var pts = seg.coordinates.map(function(c){ return [c.latitude, c.longitude]; });
+      all = all.concat(pts);
       var color = seg.freedom === 'free' ? '${colors.success}' : seg.freedom === 'caution' ? '${colors.warning}' : '${colors.error}';
-      var pl = L.polyline(pts, {color: seg.pending ? '${colors.warning}' : color, weight: data.selectedSegmentIndex===index ? 8 : 5, dashArray:seg.generated || seg.pending ? '8 8' : null}).addTo(map);
+      var selected = data.selectedSegmentIndex===index;
+      var casing = L.polyline(pts, {color:'${colors.surfaceSecondary}', weight: selected ? 12 : 8, opacity:.95, interactive:false}).addTo(map);
+      layers.push(casing);
+      var pl = L.polyline(pts, {color: seg.pending ? '${colors.warning}' : color, weight: selected ? 8 : 5, dashArray:seg.generated || seg.pending ? '8 8' : null}).addTo(map);
       layers.push(pl);
       if(data.segmentEditable){ var hit=L.polyline(pts,{weight:44,opacity:0}).addTo(map); hit.on('click',function(e){L.DomEvent.stopPropagation(e);post({type:'segmentPress',index:index,lat:e.latlng.lat,lng:e.latlng.lng});});layers.push(hit); }
     });
     (data.markers || []).forEach(function(m){
-      var html = '<div class="pin" style="background:' + (m.color || '${colors.brandPrimary}') + '"></div>';
-      var icon = L.divIcon({html: html, iconSize:[22,22], iconAnchor:[11,11], className:''});
+      var selected = m.pointIndex !== undefined && m.pointIndex === data.selectedPointIndex;
+      var size = selected ? 30 : 24;
+      var html = '<div class="pin" style="width:'+size+'px;height:'+size+'px;border-radius:'+(size/2)+'px;background:'+(m.color || '${colors.brandPrimary}')+';border-color:'+(selected ? '${colors.location}' : '${colors.surfaceSecondary}')+'">'+(m.badge || '')+'</div>';
+      var icon = L.divIcon({html: html, iconSize:[size,size], iconAnchor:[size/2,size/2], className:''});
       var mk = L.marker([m.coordinate.latitude, m.coordinate.longitude], {icon: icon, title: m.label || ''}).addTo(map);
-      mk.on('click', function(){ post({type:'markerPress', id: m.id}); });
+      mk.on('click', function(e){ L.DomEvent.stopPropagation(e); post({type:'markerPress', id: m.id}); });
       if (m.label) mk.bindTooltip(m.label);
       layers.push(mk);
     });
+    // Framing is explicit: only when the view asks for it, and only once per fitRevision.
+    if(!data.fitToRoute) fitKey='';
+    else if(all.length>1 && fitKey!==String(data.fitRevision===undefined?'initial':data.fitRevision)){
+      fitKey = String(data.fitRevision===undefined?'initial':data.fitRevision);
+      map.fitBounds(L.latLngBounds(all), {padding:[44,44]});
+    }
+    var canvas = document.getElementById('m');
+    canvas.setAttribute('data-route-segments', String((data.segments || []).length));
+    canvas.setAttribute('data-route-points', String((data.markers || []).length));
+    canvas.setAttribute('data-selected-segment', String(data.selectedSegmentIndex ?? ''));
+    canvas.setAttribute('data-selected-point', String(data.selectedPointIndex ?? ''));
   };
 
   window.__setRegion = function(r){
@@ -113,7 +143,7 @@ function buildHtml(
       if(userMarker){map.removeLayer(userMarker);userMarker=null;}
       if(accuracyCircle){map.removeLayer(accuracyCircle);accuracyCircle=null;}
     }
-    if(data.locationFocus && data.locationFocus.id!==focusId){focusId=data.locationFocus.id;var c=data.locationFocus.coordinate;map.setView([c.latitude,c.longitude],17);}
+    if(data.locationFocus && data.locationFocus.id!==focusId){focusId=data.locationFocus.id;var c=data.locationFocus.coordinate;map.setView([c.latitude,c.longitude], data.locationFocus.zoom || 17);}
   };
 
   post({type:'ready'});
@@ -129,16 +159,18 @@ const NativeMapImpl: React.FC<Props> = (props) => {
   const ref = useRef<any>(null);
   const readyRef = useRef(false);
 
-  const region = props.initialRegion || { latitude: 48.85, longitude: 2.35, latitudeDelta: 0.1, longitudeDelta: 0.1 };
-  const html = useMemo(() => buildHtml(region), [region.latitude, region.longitude, region.latitudeDelta, region.longitudeDelta]);
+  // initialRegion is captured once: a later change must never reload the WebView.
+  const [html] = useState(() => buildHtml(props.initialRegion || DEFAULT_REGION));
 
   const pushData = () => {
     if (!ref.current || !readyRef.current) return;
-    const data = JSON.stringify({ segments: props.segments || [], markers: props.markers || [], segmentEditable: !!props.onSegmentPress, selectedSegmentIndex: props.selectedSegmentIndex });
+    const data = JSON.stringify({ segments: props.segments || [], markers: props.markers || [],
+      segmentEditable: !!props.onSegmentPress, selectedSegmentIndex: props.selectedSegmentIndex,
+      selectedPointIndex: props.selectedPointIndex, fitToRoute: props.fitToRoute, fitRevision: props.fitRevision });
     ref.current.injectJavaScript(`window.__renderData(${data}); true;`);
   };
 
-  useEffect(() => { pushData(); }, [props.segments, props.markers, props.onSegmentPress, props.selectedSegmentIndex]);
+  useEffect(() => { pushData(); }, [props.segments, props.markers, props.onSegmentPress, props.selectedSegmentIndex, props.selectedPointIndex, props.fitToRoute, props.fitRevision]); // eslint-disable-line react-hooks/exhaustive-deps
   const pushLocation = useCallback(() => {
     if (!readyRef.current) return;
     const data = JSON.stringify({ userCoordinate: props.userCoordinate, userAccuracy: props.userAccuracy, locationStale: props.locationStale, locationFocus: props.locationFocus });
@@ -230,6 +262,7 @@ const WebMapImpl: React.FC<Props> = (props) => {
   const mapRef = useRef<any>(null);
   const layersRef = useRef<any[]>([]);
   const readyRef = useRef(false);
+  const fitKeyRef = useRef('');
   const latestProps = useRef(props);
   latestProps.current = props;
   const positionRef = useRef<any>(null);
@@ -252,7 +285,7 @@ const WebMapImpl: React.FC<Props> = (props) => {
     }
     if (data.locationFocus && data.locationFocus.id !== focusRef.current) {
       focusRef.current = data.locationFocus.id;
-      const p = data.locationFocus.coordinate; map.setView([p.latitude, p.longitude], 17);
+      const p = data.locationFocus.coordinate; map.setView([p.latitude, p.longitude], data.locationFocus.zoom || FOCUS_DEFAULT_ZOOM);
     }
   }, []);
   useEffect(renderLocation, [renderLocation, props.userCoordinate, props.userAccuracy, props.locationStale, props.locationFocus]);
@@ -261,7 +294,7 @@ const WebMapImpl: React.FC<Props> = (props) => {
     let cancelled = false;
     loadLeaflet().then((L) => {
       if (cancelled || !containerRef.current || mapRef.current) return;
-      const region = props.initialRegion || { latitude: 48.85, longitude: 2.35, latitudeDelta: 0.1, longitudeDelta: 0.1 };
+      const region = latestProps.current.initialRegion || DEFAULT_REGION;
       const map = L.map(containerRef.current, { zoomControl: true, attributionControl: true })
         .setView([region.latitude, region.longitude], calcZoom(region.latitudeDelta, region.longitudeDelta));
       L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png", {
@@ -284,40 +317,54 @@ const WebMapImpl: React.FC<Props> = (props) => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    if (!mapRef.current || !props.initialRegion) return;
-    const r = props.initialRegion;
-    try { mapRef.current.setView([r.latitude, r.longitude], calcZoom(r.latitudeDelta, r.longitudeDelta)); } catch {}
-  }, [props.initialRegion?.latitude, props.initialRegion?.longitude, props.initialRegion?.latitudeDelta, props.initialRegion?.longitudeDelta]);
-
   const renderLayers = () => {
     const L = (window as any).L;
     if (!L || !mapRef.current) return;
+    const data = latestProps.current;
     layersRef.current.forEach((l) => { try { mapRef.current.removeLayer(l); } catch {} });
     layersRef.current = [];
-    props.segments?.forEach((seg, index) => {
+    const all: [number, number][] = [];
+    data.segments?.forEach((seg, index) => {
       if (!seg.coordinates || seg.coordinates.length < 2) return;
-      const pts = seg.coordinates.map((c) => [c.latitude, c.longitude]);
-      const pl = L.polyline(pts, { color: seg.pending ? colors.warning : freedomColor[seg.freedom], weight: props.selectedSegmentIndex === index ? 8 : 5, dashArray: seg.generated || seg.pending ? '8 8' : undefined }).addTo(mapRef.current);
+      const pts: [number, number][] = seg.coordinates.map((c) => [c.latitude, c.longitude]);
+      all.push(...pts);
+      const selected = data.selectedSegmentIndex === index;
+      const casing = L.polyline(pts, { color: colors.surfaceSecondary, weight: selected ? 12 : 8, opacity: .95, interactive: false }).addTo(mapRef.current);
+      layersRef.current.push(casing);
+      const pl = L.polyline(pts, { color: seg.pending ? colors.warning : freedomColor[seg.freedom], weight: selected ? 8 : 5, dashArray: seg.generated || seg.pending ? '8 8' : undefined }).addTo(mapRef.current);
       layersRef.current.push(pl);
-      if (props.onSegmentPress) {
+      if (data.onSegmentPress) {
         const hit = L.polyline(pts, { weight: 44, opacity: 0 }).addTo(mapRef.current);
         hit.on('click', (e: any) => { L.DomEvent.stopPropagation(e); latestProps.current.onSegmentPress?.(index, { latitude: e.latlng.lat, longitude: e.latlng.lng }); });
         layersRef.current.push(hit);
       }
     });
-    props.markers?.forEach((m) => {
+    data.markers?.forEach((m) => {
+      const selected = isSelectedPoint(m, data.selectedPointIndex);
+      const size = selected ? 30 : 24;
       const color = m.color || colors.brandPrimary;
-      const html = `<div style="width:22px;height:22px;border-radius:50%;background:${color};border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.4);box-sizing:border-box"></div>`;
-      const icon = L.divIcon({ html, iconSize: [22, 22], iconAnchor: [11, 11], className: "" });
-      const mk = L.marker([m.coordinate.latitude, m.coordinate.longitude], { icon, title: m.label || "" }).addTo(mapRef.current);
-      if (m.onPress) mk.on("click", m.onPress);
+      const html = `<div style="width:${size}px;height:${size}px;border-radius:${size / 2}px;background:${color};border:3px solid ${selected ? colors.location : colors.surfaceSecondary};box-shadow:0 2px 6px rgba(0,0,0,0.4);box-sizing:border-box;display:flex;align-items:center;justify-content:center;color:#fff;font:700 12px system-ui,sans-serif">${m.badge || ''}</div>`;
+      const icon = L.divIcon({ html, iconSize: [size, size], iconAnchor: [size / 2, size / 2], className: "" });
+      const mk = L.marker([m.coordinate.latitude, m.coordinate.longitude], { icon, title: m.label || "", zIndexOffset: selected ? 1000 : 0 }).addTo(mapRef.current);
+      mk.on("click", (e: any) => { L.DomEvent.stopPropagation(e); m.onPress?.(); });
       if (m.label) mk.bindTooltip(m.label);
       layersRef.current.push(mk);
     });
+    if (!data.fitToRoute) fitKeyRef.current = '';
+    else if (all.length > 1 && fitKeyRef.current !== fitKeyOf(data.fitRevision)) {
+      fitKeyRef.current = fitKeyOf(data.fitRevision);
+      try { mapRef.current.fitBounds(L.latLngBounds(all), { padding: [44, 44] }); } catch {}
+    }
+    const canvas = containerRef.current;
+    if (canvas) {
+      canvas.setAttribute('data-route-segments', String(data.segments?.length || 0));
+      canvas.setAttribute('data-route-points', String((data.markers || []).length));
+      canvas.setAttribute('data-selected-segment', data.selectedSegmentIndex === undefined ? '' : String(data.selectedSegmentIndex));
+      canvas.setAttribute('data-selected-point', data.selectedPointIndex === undefined ? '' : String(data.selectedPointIndex));
+    }
   };
 
-  useEffect(() => { if (readyRef.current) renderLayers(); }, [props.segments, props.markers, props.selectedSegmentIndex, props.onSegmentPress]);
+  useEffect(() => { if (readyRef.current) renderLayers(); }, [props.segments, props.markers, props.selectedSegmentIndex, props.selectedPointIndex, props.onSegmentPress, props.fitToRoute, props.fitRevision]);
 
   return (
     <View
@@ -328,7 +375,7 @@ const WebMapImpl: React.FC<Props> = (props) => {
       onResponderTerminationRequest={() => false}
     >
       {/* @ts-ignore */}
-      <div ref={(el: any) => { containerRef.current = el; }} style={{ width: "100%", height: "100%", touchAction: "none" }} />
+      <div data-testid={`${props.testID}-leaflet`} ref={(el: any) => { containerRef.current = el; }} style={{ width: "100%", height: "100%", touchAction: "none" }} />
     </View>
   );
 };
@@ -342,14 +389,21 @@ export const DoggoMap: React.FC<Props> = (props) => {
   const gps = useLiveMapLocation();
   const [focus, setFocus] = useState<MapProps['locationFocus']>();
   const pendingFocus = useRef(false);
+  const autoFocused = useRef(false);
   useEffect(() => {
     if (pendingFocus.current && gps.coordinate && gps.status === 'live') {
       pendingFocus.current = false;
       setFocus(previous => ({ id: (previous?.id || 0) + 1, coordinate: gps.coordinate! }));
     }
   }, [gps.coordinate, gps.status]);
+  // Opening the app lands on the user's GPS position instead of a default city center.
+  useEffect(() => {
+    if (autoFocused.current || !props.focusUserOnLoad || gps.status !== 'live' || !gps.coordinate) return;
+    autoFocused.current = true;
+    setFocus(previous => ({ id: (previous?.id || 0) + 1, coordinate: gps.coordinate!, zoom: props.focusUserZoom || FOCUS_DEFAULT_ZOOM }));
+  }, [props.focusUserOnLoad, props.focusUserZoom, gps.coordinate, gps.status]);
   const locate = () => {
-    if (gps.coordinate) setFocus(previous => ({ id: (previous?.id || 0) + 1, coordinate: gps.coordinate! }));
+    if (gps.coordinate) setFocus(previous => ({ id: (previous?.id || 0) + 1, coordinate: gps.coordinate!, zoom: previous?.zoom }));
     if (gps.status !== 'live') {
       pendingFocus.current = true;
       if (gps.status === 'denied' && Platform.OS !== 'web') void Linking.openSettings().catch(() => {});

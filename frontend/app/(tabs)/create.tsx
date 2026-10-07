@@ -1,19 +1,23 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { View, Text, Pressable, TextInput, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import * as Location from 'expo-location';
 import { colors, spacing } from '../../src/theme';
 import { DoggoMap } from '../../src/DoggoMap';
 import { useAuth } from '../../src/AuthContext';
 import { environmentLabels, difficultyLabels, freedomLabels } from '../../src/labels';
 import { useWalkCreation } from '../../src/useWalkCreation';
-import { closed, rawGapToStart, regionFor, routeMarkers, stats } from '../../src/routeDraft';
+import { closed, draftPoints, rawGapToStart, stats } from '../../src/routeDraft';
+import { draftMarkers } from '../../src/create/draftMarkers';
 import { SegmentPicker } from '../../src/create/SegmentPicker';
 import { FinishDialog } from '../../src/create/FinishDialog';
 import { RoutePreview } from '../../src/create/RoutePreview';
 import { styles } from '../../src/create/styles';
 import { SegmentEditor } from '../../src/create/SegmentEditor';
+import { PointEditor } from '../../src/create/PointEditor';
+
+// The map opens on the user's GPS position (focusUserOnLoad) and never recenters on its own afterwards.
+const MAP_DEFAULT_REGION = { latitude: 48.85, longitude: 2.35, latitudeDelta: .025, longitudeDelta: .025 };
 
 export default function CreateScreen() {
   const { user } = useAuth();
@@ -26,21 +30,10 @@ export default function CreateScreen() {
   const [difficulty, setDifficulty] = useState('easy');
   const [dogFreedom, setDogFreedom] = useState('free');
   const [duration, setDuration] = useState('30');
-  const [initialRegion, setInitialRegion] = useState({ latitude: 48.85, longitude: 2.35, latitudeDelta: .025, longitudeDelta: .025 });
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const permission = await Location.requestForegroundPermissionsAsync();
-        if (permission.status !== 'granted') return;
-        const loc = await Location.getCurrentPositionAsync({});
-        if (!cancelled) setInitialRegion({ latitude: loc.coords.latitude, longitude: loc.coords.longitude, latitudeDelta: .015, longitudeDelta: .015 });
-      } catch { /* GPS recording reports permission errors explicitly when requested. */ }
-    })();
-    return () => { cancelled = true; };
-  }, []);
   const totals = stats(c.draft);
   const isClosed = closed(c.draft);
+  const points = draftPoints(c.draft);
+  const markers = draftMarkers(c.draft, c.selection, c.selectPoint);
   const publish = async () => {
     c.setError('');
     if (!user) { c.setError('Connectez-vous pour publier.'); return; }
@@ -61,15 +54,17 @@ export default function CreateScreen() {
       {!!c.error && !c.preview && !c.finishOpen && <Text testID="create-route-alert" style={styles.error} accessibilityRole="alert">{c.error}</Text>}
     </View>
     <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: insets.bottom + spacing.xl }}>
-      <View style={styles.map}><DoggoMap testID="create-map" initialRegion={isClosed ? regionFor(c.draft) : initialRegion}
-        segments={c.draft.legs.map(l => ({ ...l, pending: !l.snapped }))} markers={routeMarkers(c.draft)} onPress={c.mode === 'draw' && !c.locked ? c.tap : undefined}
-        onSegmentPress={c.selectSegment} selectedSegmentIndex={c.selection?.index}
-        showsUserLocation userCoordinate={c.recorder.position} fitToRoute={isClosed && !c.recorder.recording} /></View>
+      <View style={styles.map}><DoggoMap testID="create-map" initialRegion={MAP_DEFAULT_REGION}
+        segments={c.draft.legs.map(l => ({ ...l, pending: !l.snapped }))} markers={markers}
+        onPress={c.mode === 'draw' && !c.locked ? c.tap : undefined}
+        onSegmentPress={c.selectSegment} selectedSegmentIndex={c.selection?.kind === 'segment' ? c.selection.index : undefined}
+        selectedPointIndex={c.selection?.kind === 'point' ? c.selection.index : undefined}
+        focusUserOnLoad={!c.draft.start} fitToRoute={isClosed && !c.recorder.recording} fitRevision={isClosed ? 1 : 0} /></View>
       <View style={styles.section}>
         <Text testID="route-status" style={isClosed ? styles.notice : styles.hint}>{c.recorder.recording ? 'Balade en cours · seul le bouton Terminer arrête le GPS' : isClosed ? 'Boucle fermée · départ = arrivée' : 'Le premier point est votre départ. Revenez-y pour former une boucle.'}</Text>
-        <Text testID="route-live-stats" style={styles.text}>{totals.distanceKm.toFixed(2)} km · {totals.offLeashPct}% sans laisse · {c.draft.legs.reduce((n, l) => n + l.coordinates.length - 1, c.draft.start ? 1 : 0)} points</Text>
+        <Text testID="route-live-stats" style={styles.text}>{totals.distanceKm.toFixed(2)} km · {totals.offLeashPct}% sans laisse · {points.length} points</Text>
         {c.mode === 'draw' ? <>
-          <Text testID="draw-instructions" style={styles.hint}>Chaque nouveau segment suit immédiatement les chemins. Touchez un segment pour changer sa règle ou le diviser.</Text>
+          <Text testID="draw-instructions" style={styles.hint}>Chaque nouveau segment suit immédiatement les chemins. Touchez un segment ou un point sur la carte pour le modifier.</Text>
           <View style={styles.row}>
             <Action id="undo-point" label="Annuler le dernier ajout" onPress={c.undo} disabled={c.locked || !c.draft.start} />
             <Action id="clear-points" label="Effacer" onPress={c.clear} disabled={c.locked || !c.draft.start} />
@@ -96,15 +91,17 @@ export default function CreateScreen() {
         <Text testID="segment-freedom-label" style={styles.label}>Liberté des prochains segments</Text>
         <SegmentPicker value={c.freedom} onChange={c.setFreedom} disabled={!!c.busy} />
         {!!c.draft.legs.length && <>
-          <Text testID="select-segment-instructions" style={styles.hint}>Touchez une portion sur la carte, ou sélectionnez-la ci-dessous.</Text>
+          <Text testID="select-segment-instructions" style={styles.hint}>Touchez une portion ou un point sur la carte, ou sélectionnez un segment ci-dessous.</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
-            {c.draft.legs.map((leg, i) => <Pressable key={leg.id || i} testID={`select-segment-${i}`} style={[styles.chip, c.selection?.index === i && styles.active]} onPress={() => c.selectSegment(i)}>
-              <Text style={[styles.text, c.selection?.index === i && styles.onBrand]}>Segment {i + 1}{!leg.snapped ? ' · à ajuster' : ''}</Text>
+            {c.draft.legs.map((leg, i) => <Pressable key={leg.id || i} testID={`select-segment-${i}`} style={[styles.chip, c.selection?.kind === 'segment' && c.selection.index === i && styles.active]} onPress={() => c.selectSegment(i)}>
+              <Text style={[styles.text, c.selection?.kind === 'segment' && c.selection.index === i && styles.onBrand]}>Segment {i + 1}{!leg.snapped ? ' · à ajuster' : ''}</Text>
             </Pressable>)}
           </ScrollView>
-          <SegmentEditor prefix="create-segment" draft={c.draft} selection={c.selection} disabled={!!c.busy || c.gps.busy} recording={c.recorder.recording || c.recorder.starting}
-            onFreedom={c.updateFreedom} onSplit={c.splitSelected} onClose={() => c.setSelection(null)} />
         </>}
+        <SegmentEditor prefix="create-segment" draft={c.draft} selection={c.selection} disabled={!!c.busy || c.gps.busy} recording={c.recorder.recording || c.recorder.starting}
+          onFreedom={c.updateFreedom} onInsert={c.splitSelected} onClose={() => c.setSelection(null)} />
+        <PointEditor prefix="create-point" draft={c.draft} selection={c.selection?.kind === 'point' ? c.selection : null}
+          disabled={c.locked} onRemove={c.removePoint} onClose={() => c.setSelection(null)} />
         {!!c.error && <Text testID="create-error" accessibilityRole="alert" style={styles.error}>{c.error}</Text>}
         {!!c.notice && <Text testID="create-notice" accessibilityLiveRegion="polite" style={styles.notice}>{c.notice}</Text>}
         {!!c.busy && <View testID="route-busy" style={styles.row}><ActivityIndicator color={colors.brandPrimary} /><Text style={styles.hint}>{c.busy}</Text></View>}
@@ -129,7 +126,8 @@ export default function CreateScreen() {
     {c.finishOpen && <FinishDialog open gap={rawGapToStart(c.draft)} busy={c.busy} error={c.error} onComplete={c.finishReturn} onContinue={c.continueRecording} />}
     {c.preview && <RoutePreview open draft={c.draft} duration={duration} title={title} error={c.error} busy={c.busy}
       onBack={() => c.setPreview(false)} onPublish={publish} onFreedom={c.updateFreedom} selection={c.selection}
-      onSelect={c.selectSegment} onSplit={c.splitSelected} onCloseSelection={() => c.setSelection(null)} onUndo={c.undo} canUndo={c.canUndoInPreview} />}
+      onSelect={c.selectSegment} onSelectPoint={c.selectPoint} onRemovePoint={c.removePoint}
+      onInsert={c.splitSelected} onCloseSelection={() => c.setSelection(null)} onUndo={c.undo} canUndo={c.canUndoInPreview} />}
   </KeyboardAvoidingView>;
 }
 
