@@ -132,24 +132,4 @@ function installPinchZoom(map, L) {
     touch.enable();
     map.on('unload', () => { cancelAnimationFrame(frame); coasting = false; detach(); });
 }
-// During a pinch, transform the already rendered vector canvas like Leaflet's
-// raster tiles. Rebuilding vector labels/tiles on every finger movement stalls
-// low-powered devices; synchronize MapLibre's camera once the gesture ends.
-function installVectorPinchTransform(layer, map, L) {
-    const sync = layer._pinchZoom;
-    if (!sync)
-        return;
-    layer._pinchZoom = function (event) {
-        if (!event.pinch) {
-            sync.call(layer, event);
-            return;
-        }
-        const gl = layer.getMaplibreMap();
-        const scale = map.getZoomScale(map.getZoom(), gl.getZoom() + 1);
-        const center = map.latLngToLayerPoint(gl.getCenter());
-        const topLeft = center.subtract(layer.getSize().multiplyBy(scale / 2));
-        const offset = topLeft.subtract(L.DomUtil.getPosition(layer._container));
-        L.DomUtil.setTransform(gl.getCanvas(), offset, scale);
-    };
-}
 `;

@@ -27,8 +27,10 @@ function startMap(native = false, apiKey = 'test-key') {
   const messages = [], layers = [], fits = [], views = [], removed = [], listeners = {};
   const canvas = { attributes: {}, setAttribute(k, v) { this.attributes[k] = v; } };
   const map = {
+    zoom: 12, getZoom() { return this.zoom; },
     setView(p, zoom) { views.push({ p, zoom }); return this; },
     createPane() { return { style: {} }; }, on(event, cb) { listeners[event] = cb; },
+    fire(event, data) { listeners[event]?.({ type: event, ...data }); },
     removeLayer(layer) { removed.push(layer); }, fitBounds(bounds) { fits.push(bounds); }, invalidateSize() {},
   };
   function layer(kind, points, options) {
@@ -49,7 +51,15 @@ function startMap(native = false, apiKey = 'test-key') {
   const L = { map: () => map, tileLayer: (url, options) => layer('tiles', url, options),
     polyline: (pts, opts) => layer('line', pts, opts), marker: (pts, opts) => layer('marker', pts, opts),
     circleMarker: (pts, opts) => layer('user', pts, opts), circle: (pts, opts) => layer('accuracy', pts, opts),
-    maplibreGL: opts => { const base = layer('liberty', opts.style, opts); base.gl = { events: {}, on(event, cb) { this.events[event] = cb; return this; }, loaded: () => true }; base.getMaplibreMap = () => base.gl; return base; },
+    maplibreGL: opts => {
+      const base = layer('liberty', opts.style, opts);
+      base.gl = { events: {}, cameraZoom: 0, on(event, cb) { this.events[event] = cb; return this; }, loaded: () => true };
+      base.getMaplibreMap = () => base.gl;
+      base._pinchZoom = () => { base.gl.cameraZoom = map.getZoom() - 1; };
+      const addTo = base.addTo;
+      base.addTo = function () { map.on('zoom', event => this._pinchZoom(event)); return addTo.call(this); };
+      return base;
+    },
     divIcon: opts => opts, latLngBounds: pts => pts, DomEvent: { stopPropagation() {} },
   };
   window.L = L;
@@ -57,7 +67,7 @@ function startMap(native = false, apiKey = 'test-key') {
     createElement: () => ({ style: {}, textContent: '' }) } });
   // Execute the exact inline scripts shipped to both iframe and WebView.
   for (const match of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) vm.runInContext(match[1], context);
-  return { window, messages, layers, fits, views, removed, listeners, canvas };
+  return { window, messages, layers, fits, views, removed, listeners, canvas, map };
 }
 
 const scene = () => ({ revision: 1, segmentEditable: true, fitToRoute: true, fitRevision: 1,
@@ -77,6 +87,12 @@ for (const native of [false, true]) {
   assert.match(liberty.options.attributionControl.customAttribution, /OpenMapTiles/);
   liberty.gl.events.idle();
   assert.equal(m.messages.at(-1).type, 'tilesLoaded');
+  m.map.zoom = 15;
+  m.map.fire('zoom', { pinch: true });
+  assert.equal(liberty.gl.cameraZoom, 14, 'update the vector camera during the gesture');
+  m.map.zoom = 15.4;
+  m.map.fire('zoom', { pinch: true });
+  assert.equal(liberty.gl.cameraZoom, 14.4, 'keep rendering fractional pinch/inertia frames before zoomend');
   assert.equal(m.fits.length, 1);
   assert.equal(m.views.length, 2);
   const linesBefore = m.layers.filter(l => l.kind === 'line').length;

@@ -3,7 +3,7 @@ const path = require('path');
 const vm = require('vm');
 const { makeLoader } = require('./ts_loader.cjs');
 const { PINCH_ZOOM_SCRIPT } = makeLoader().load(path.join(__dirname, '../src/maps/pinchZoom.ts'));
-const { installPinchZoom, installVectorPinchTransform } = vm.runInThisContext(`(function(){${PINCH_ZOOM_SCRIPT}; return { installPinchZoom, installVectorPinchTransform };})()`);
+const { installPinchZoom } = vm.runInThisContext(`(function(){${PINCH_ZOOM_SCRIPT}; return { installPinchZoom };})()`);
 
 class Point {
   constructor(x, y) { this.x = x; this.y = y; }
@@ -94,19 +94,6 @@ try {
   assert.equal(state.map.zoom, stopped, 'a new touch interrupts momentum immediately');
   assert.equal(frames.size, 0);
   assert.equal(state.map.ended, 1);
-  let syncCount = 0, transform;
-  const canvas = {};
-  const vector = { _container: {}, _pinchZoom() { syncCount++; }, getSize: () => new Point(400, 800),
-    getMaplibreMap: () => ({ getZoom: () => 11, getCenter: () => new Point(0, 0), getCanvas: () => canvas }) };
-  installVectorPinchTransform(vector, { getZoom: () => 14, getZoomScale: (to, from) => 2 ** (to - from), latLngToLayerPoint: () => new Point(200, 400) },
-    { DomUtil: { getPosition: () => new Point(10, 20), setTransform: (element, offset, scale) => { transform = { element, offset, scale }; } } });
-  vector._pinchZoom({ pinch: true });
-  assert.equal(syncCount, 0, 'do not rebuild vector tiles and labels during a pinch frame');
-  assert.equal(transform.element, canvas);
-  assert.equal(transform.scale, 4);
-  assert.deepEqual(transform.offset, new Point(-610, -1220));
-  vector._pinchZoom({});
-  assert.equal(syncCount, 1, 'synchronize the vector camera when the gesture ends');
   console.log('PASS: pinch gain, speed-dependent inertia in both directions, pause/cancel, sequential finger release, interruption and zoom limits');
 } finally {
   for (const [key, descriptor] of Object.entries(saved)) {

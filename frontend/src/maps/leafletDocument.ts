@@ -48,7 +48,6 @@ window.addEventListener('unhandledrejection', function(){ post({type:'error'}); 
   var map = L.map('m', {zoomControl: true, attributionControl: true, touchZoom: true, zoomSnap: 0, minZoom: 1, maxZoom: 20, bounceAtZoomLimits: false, maxBounds: [[-85.0511, -Infinity], [85.0511, Infinity]], maxBoundsViscosity: 1}).setView([${region.latitude}, ${region.longitude}], ${zoom});
   ${PINCH_ZOOM_SCRIPT}
   try { installPinchZoom(map, L); } catch (error) { console.warn('Pinch enhancement unavailable', error); }
-  var smoothVectorPinch = installVectorPinchTransform;
   var voyagerUrl = ${JSON.stringify(cartoTileUrl())};
   var basemapLayer = null;
   var basemapName;
@@ -72,7 +71,8 @@ window.addEventListener('unhandledrejection', function(){ post({type:'error'}); 
       } else {
         if (!L.maplibreGL) throw new Error('MapLibre unavailable');
         basemapLayer = L.maplibreGL({updateInterval:16, style:${JSON.stringify(LIBERTY_STYLE_URL)}, attributionControl:{customAttribution:'<a href="https://openfreemap.org/">OpenFreeMap</a> &copy; <a href="https://www.openmaptiles.org/">OpenMapTiles</a> Data from <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'}});
-        smoothVectorPinch(basemapLayer, map, L);
+        // Keep the adapter's live vector-camera updates during pinch and inertia.
+        // Transforming a frozen canvas here prevents labels/tiles from rendering.
         basemapLayer.addTo(map);
         var gl = basemapLayer.getMaplibreMap();
         gl.on('error', fail);
