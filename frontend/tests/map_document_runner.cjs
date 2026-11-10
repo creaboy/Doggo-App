@@ -37,6 +37,7 @@ function startMap(native = false, apiKey = 'test-key') {
   const L = { map: () => map, tileLayer: (url, options) => layer('tiles', url, options),
     polyline: (pts, opts) => layer('line', pts, opts), marker: (pts, opts) => layer('marker', pts, opts),
     circleMarker: (pts, opts) => layer('user', pts, opts), circle: (pts, opts) => layer('accuracy', pts, opts),
+    maplibreGL: opts => { const base = layer('liberty', opts.style, opts); base.gl = { events: {}, on(event, cb) { this.events[event] = cb; return this; }, loaded: () => true }; base.getMaplibreMap = () => base.gl; return base; },
     divIcon: opts => opts, latLngBounds: pts => pts, DomEvent: { stopPropagation() {} },
   };
   window.L = L;
@@ -56,13 +57,14 @@ const scene = () => ({ revision: 1, segmentEditable: true, fitToRoute: true, fit
 for (const native of [false, true]) {
   const m = startMap(native);
   assert.equal(m.messages.at(-1).type, 'ready');
-  const tiles = m.layers.find(l => l.kind === 'tiles');
-  assert.match(tiles.points, /cartocdn\.com.*\?key=test-key$/);
-  assert.match(tiles.options.attribution, /OpenStreetMap contributors/);
-  assert.match(tiles.options.attribution, /CARTO/);
-  const data = { scene: scene(), userCoordinate: { latitude: 48.85, longitude: 2.35 }, userAccuracy: 12,
+  const data = { basemap: 'liberty', scene: scene(), userCoordinate: { latitude: 48.85, longitude: 2.35 }, userAccuracy: 12,
     locationFocus: { id: 1, coordinate: { latitude: 48.85, longitude: 2.35 }, zoom: 17 } };
   m.window.__doggoUpdate(data);
+  const liberty = m.layers.find(l => l.kind === 'liberty');
+  assert.equal(liberty.points, 'https://tiles.openfreemap.org/styles/liberty');
+  assert.match(liberty.options.attributionControl.customAttribution, /OpenMapTiles/);
+  liberty.gl.events.idle();
+  assert.equal(m.messages.at(-1).type, 'tilesLoaded');
   assert.equal(m.fits.length, 1);
   assert.equal(m.views.length, 2);
   const linesBefore = m.layers.filter(l => l.kind === 'line').length;
@@ -94,6 +96,19 @@ for (const native of [false, true]) {
   assert.equal(m.messages.length, count, 'reject messages from other origins');
   m.listeners.message({ source: m.window.parent, origin: 'https://doggo.test', data: { doggoMap: true, payload: data, requestReady: true } });
   assert.equal(m.messages.at(-1).type, 'ready', 'late host listeners can repeat the handshake');
+  const priorViews = m.views.length;
+  const priorFits = m.fits.length;
+  m.window.__doggoUpdate({ ...data, basemap: 'voyager' });
+  const tiles = m.layers.find(l => l.kind === 'tiles');
+  assert.match(tiles.points, /cartocdn\.com\/rastertiles\/voyager\/.*\?key=test-key$/);
+  assert.match(tiles.options.attribution, /OpenStreetMap contributors/);
+  assert.match(tiles.options.attribution, /CARTO/);
+  assert.ok(m.removed.includes(liberty));
+  assert.equal(m.views.length, priorViews, 'switching backgrounds must not recenter');
+  assert.equal(m.fits.length, priorFits);
+  const messagesBefore = m.messages.length;
+  liberty.gl.events.error();
+  assert.equal(m.messages.length, messagesBefore, 'ignore late errors from an inactive background');
   tiles.events.tileerror();
   assert.equal(m.messages.at(-1).type, 'error');
   tiles.events.load();
@@ -105,8 +120,13 @@ for (const native of [false, true]) {
 }
 
 const missingKey = startMap(false, '');
-assert.equal(missingKey.layers.some(l => l.kind === 'tiles'), false);
-assert.ok(missingKey.messages.some(m => m.type === 'error'));
-missingKey.window.__doggoUpdate({ scene: scene() });
+missingKey.window.__doggoUpdate({ scene: scene(), basemap: 'liberty' });
 assert.equal(missingKey.canvas.attributes['data-route-segments'], '1');
-console.log('PASS: missing CARTO key preserves route overlays and reports the unavailable basemap');
+assert.equal(missingKey.canvas.attributes['data-basemap'], 'liberty');
+assert.equal(missingKey.messages.some(m => m.type === 'error'), false, 'Liberty must load without a CARTO key');
+const liberty = missingKey.layers.find(l => l.kind === 'liberty');
+missingKey.window.__doggoUpdate({ scene: scene(), basemap: 'voyager' });
+assert.equal(missingKey.canvas.attributes['data-basemap'], 'liberty', 'keep the working background if Voyager has no key');
+assert.equal(missingKey.removed.includes(liberty), false);
+assert.match(missingKey.messages.at(-1).message, /CARTO/);
+console.log('PASS: default Liberty needs no key; unavailable Voyager preserves the existing map and overlays');

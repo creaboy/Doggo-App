@@ -4,7 +4,7 @@ Application mobile et web pour découvrir, tracer et partager des balades adapt�
 
 L'application est construite avec :
 - **Backend :** Python FastAPI + Motor (MongoDB asynchrone) + OSRM (routage piéton OpenStreetMap)
-- **Frontend :** React Native / Expo + Leaflet / CARTO (Web, iOS et Android via Expo Go)
+- **Frontend :** React Native / Expo + Leaflet / OpenFreeMap (Web, iOS et Android via Expo Go)
 - **Base de données :** MongoDB
 
 ---
@@ -135,10 +135,11 @@ Vous pouvez également créer un nouveau compte directement depuis l'écran de c
 
 ## 🗺️ Cartographie et Routage
 
-- **Un seul moteur de carte :** Leaflet 1.9.4 et le fond CARTO Positron, sur toutes les plateformes. Le même document est affiché dans une iframe sur le web et une WebView sur mobile. La carte ne dépend pas du backend pour s'afficher.
-- **Clé CARTO :** renseignez `EXPO_PUBLIC_CARTO_API_KEY` dans `frontend/.env`, puis redémarrez Expo. [Obtenez votre propre clé CARTO](https://www.carto.com/basemaps/apikey/). Sans clé, les tracés restent visibles mais le fond de carte est indisponible. Les attributions OpenStreetMap et CARTO restent affichées.
-- **Conditions CARTO :** une clé est requise. Au 10 novembre 2026, CARTO annonce des paliers gratuits sous quotas ; consulter les [conditions actuelles](https://www.carto.com/legal/basemap-terms/index.html) avant publication.
-- **Routage piéton et recalage GPS :** FOSSGIS / OSRM via le backend. `OSRM_ROUTING_BASE_URL` permet de configurer une instance compatible. Les tuiles CARTO et le routage sont deux services distincts.
+- **Fond par défaut :** Liberty d'[OpenFreeMap](https://openfreemap.org/quick_start/), sans inscription ni clé API, avec ses libellés et points d'intérêt. Leaflet conserve les interactions et les superpositions de balades ; MapLibre GL affiche le fond vectoriel Liberty. Le même document fonctionne dans une iframe web et une WebView mobile, sans module natif supplémentaire.
+- **Comparer les fonds :** le sélecteur de la carte propose Liberty et CARTO Voyager. Changer de fond conserve le cadrage, les tracés, les points et le GPS.
+- **CARTO Voyager (optionnel) :** renseignez `EXPO_PUBLIC_CARTO_API_KEY` dans `frontend/.env` puis redémarrez Expo pour activer Voyager. [Obtenez votre propre clé CARTO](https://www.carto.com/basemaps/apikey/). Sans clé, Liberty fonctionne et l'option Voyager indique « clé requise ». Les attributions propres à chaque fond restent visibles.
+- **Points d'intérêt :** Liberty conserve son style complet (commerces, services et autres libellés, selon le niveau de zoom et les données OpenStreetMap). Les points d'eau, dangers et autres contributions des balades sont affichés au-dessus des deux fonds.
+- **Routage piéton et recalage GPS :** FOSSGIS / OSRM via le backend. `OSRM_ROUTING_BASE_URL` permet de configurer une instance compatible. Le fond de carte et le routage sont deux services distincts.
 - **GPS :** enregistrement au premier plan ; conservez Doggo ouvert pendant la balade.
 
 ## Authentification autonome

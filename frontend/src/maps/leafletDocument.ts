@@ -4,9 +4,12 @@ import type { Region } from './types';
 export const FOCUS_DEFAULT_ZOOM = 17;
 export const DEFAULT_REGION: Region = { latitude: 48.85, longitude: 2.35, latitudeDelta: 0.1, longitudeDelta: 0.1 };
 
+export const LIBERTY_STYLE_URL = "https://tiles.openfreemap.org/styles/liberty";
+export const voyagerAvailable = () => !!process.env.EXPO_PUBLIC_CARTO_API_KEY?.trim();
+
 function cartoTileUrl(): string | null {
   const key = process.env.EXPO_PUBLIC_CARTO_API_KEY?.trim();
-  return key ? `https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png?key=${encodeURIComponent(key)}` : null;
+  return key ? `https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png?key=${encodeURIComponent(key)}` : null;
 }
 
 function calcZoom(latDelta: number, lngDelta: number): number {
@@ -16,8 +19,10 @@ function calcZoom(latDelta: number, lngDelta: number): number {
 export function buildMapDocument(region: Region): string {
   const zoom = calcZoom(region.latitudeDelta, region.longitudeDelta);
   return `<!doctype html><html><head>
+<meta charset="utf-8" />
 <meta name="viewport" content="initial-scale=1.0,maximum-scale=1.0,user-scalable=no" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" />
 <style>html,body,#m{margin:0;padding:0;height:100%;width:100%;background:#F1F4EE;}
 .pin{width:24px;height:24px;border-radius:50%;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.4);box-sizing:border-box;display:flex;align-items:center;justify-content:center;color:#fff;font:700 12px system-ui,sans-serif;}
 .leaflet-container{background:#F1F4EE;}
@@ -32,18 +37,42 @@ function post(obj) {
 }
 </script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" onerror="post({type:'error'})"></script>
+<script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js" onerror="post({type:'error'})"></script>
+<script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.1.4/dist/leaflet-maplibre-gl.js" onerror="post({type:'error'})"></script>
 <script>
 (function(){
   if (!window.L) return;
-  var map = L.map('m', {zoomControl: true, attributionControl: true}).setView([${region.latitude}, ${region.longitude}], ${zoom});
-  var tileUrl = ${JSON.stringify(cartoTileUrl()).replace(/</g, "\\u003c")};
-  var tileFailed = false;
-  if (tileUrl) {
-    L.tileLayer(tileUrl, {maxZoom:20, subdomains:'abcd', attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a> &copy; <a href="https://carto.com/attribution/">CARTO</a>'})
-      .on('loading', function(){ tileFailed = false; })
-      .on('tileerror', function(){ tileFailed = true; post({type:'error'}); })
-      .on('load', function(){ if (!tileFailed) post({type:'tilesLoaded'}); }).addTo(map);
-  } else post({type:'error'});
+  var map = L.map('m', {zoomControl: true, attributionControl: true, minZoom: 1, maxBounds: [[-85.0511, -Infinity], [85.0511, Infinity]], maxBoundsViscosity: 1}).setView([${region.latitude}, ${region.longitude}], ${zoom});
+  var voyagerUrl = ${JSON.stringify(cartoTileUrl())};
+  var basemapLayer = null;
+  var basemapName;
+  var basemapGeneration = 0;
+  function setBasemap(name) {
+    name = name === 'voyager' ? 'voyager' : 'liberty';
+    if (name === basemapName) return;
+    if (name === 'voyager' && !voyagerUrl) { post({type:'error', message:'CARTO Voyager necessite une cle CARTO. Liberty reste disponible.'}); return; }
+    var generation = ++basemapGeneration;
+    if (basemapLayer) { map.removeLayer(basemapLayer); basemapLayer = null; }
+    basemapName = name;
+    var failed = false;
+    function fail() { if (generation === basemapGeneration) { failed = true; post({type:'error'}); } }
+    function loaded() { if (generation === basemapGeneration && !failed) post({type:'tilesLoaded'}); }
+    post({type:'basemapLoading'});
+    try {
+      if (name === 'voyager') {
+        basemapLayer = L.tileLayer(voyagerUrl, {maxZoom:20, subdomains:'abcd', attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a> &copy; <a href="https://carto.com/attribution/">CARTO</a>'})
+          .on('loading', function(){ failed = false; })
+          .on('tileerror', fail).on('load', loaded).addTo(map);
+      } else {
+        if (!L.maplibreGL) throw new Error('MapLibre unavailable');
+        basemapLayer = L.maplibreGL({style:${JSON.stringify(LIBERTY_STYLE_URL)}, attributionControl:{customAttribution:'<a href="https://openfreemap.org/">OpenFreeMap</a> &copy; <a href="https://www.openmaptiles.org/">OpenMapTiles</a> Data from <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'}}).addTo(map);
+        var gl = basemapLayer.getMaplibreMap();
+        gl.on('error', fail);
+        gl.on('idle', function(){ if (gl.loaded()) loaded(); });
+      }
+      document.getElementById('m').setAttribute('data-basemap', name);
+    } catch (error) { fail(); }
+  }
   var layers = [];
   var sceneKey;
   var userMarker = null;
@@ -113,6 +142,7 @@ function post(obj) {
   };
 
   window.__doggoUpdate = function(data) {
+    setBasemap(data.basemap);
     var key = JSON.stringify(data.scene);
     if (data.scene && key !== sceneKey) {
       sceneKey = key;

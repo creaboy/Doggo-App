@@ -33,6 +33,7 @@ export type MapScene = Pick<MapProps, 'segments' | 'selectedSegmentIndex' | 'sel
   segmentEditable: boolean;
   markers: Omit<MarkerInput, 'onPress'>[];
 };
-export type MapPayload = Pick<MapProps, 'userCoordinate' | 'userAccuracy' | 'locationStale' | 'locationFocus'> & { scene: MapScene };
-export type MapMessage = { type: 'ready' | 'error' | 'tilesLoaded' | 'press' | 'segmentPress' | 'markerPress'; lat?: number; lng?: number; index?: number; id?: string };
+export type Basemap = 'liberty' | 'voyager';
+export type MapPayload = Pick<MapProps, 'userCoordinate' | 'userAccuracy' | 'locationStale' | 'locationFocus'> & { scene: MapScene; basemap: Basemap };
+export type MapMessage = { type: 'ready' | 'error' | 'tilesLoaded' | 'basemapLoading' | 'press' | 'segmentPress' | 'markerPress'; lat?: number; lng?: number; index?: number; id?: string; message?: string };
 export type MapSurfaceProps = { html: string; payload: MapPayload; onMessage: (message: MapMessage) => void; testID: string };
