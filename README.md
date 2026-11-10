@@ -4,7 +4,7 @@ Application mobile et web pour découvrir, tracer et partager des balades adapt�
 
 L'application est construite avec :
 - **Backend :** Python FastAPI + Motor (MongoDB asynchrone) + OSRM (routage piéton OpenStreetMap)
-- **Frontend :** React Native / Expo (compatible Web, iOS et Android via Expo Go)
+- **Frontend :** React Native / Expo + Leaflet / CARTO (Web, iOS et Android via Expo Go)
 - **Base de données :** MongoDB
 
 ---
@@ -31,12 +31,16 @@ Exécutez simplement :
 5. Lance le serveur Expo au premier plan (vous pouvez scanner le QR code directement sur votre téléphone ou taper `w` pour tester sur votre navigateur web).
 6. Arrête tous les services proprement lorsque vous faites `Ctrl+C`.
 
+Le projet utilise **Expo SDK 58** et doit être ouvert avec Expo Go pour SDK 58. Le lanceur vérifie Node.js et réinstalle les dépendances avec `npm ci` lorsque `package.json` ou `package-lock.json` change, même si `node_modules` existe déjà. Il affiche le SDK installé et lance explicitement Expo Go.
+
+Après une mise à jour, fermez l'ancien terminal puis lancez `start-dev.bat -ClearCache` (ou `./start-dev.ps1 -ClearCache` dans PowerShell). Le cache est aussi vidé automatiquement lorsque la version Expo installée change. Mettre à jour uniquement l'application Expo Go sur le téléphone ne met pas à jour le SDK du projet.
+
 ---
 
 ## 🚀 Démarrage manuel (étape par étape)
 
 ### Prérequis
-- **Node.js** (v18+) et **Yarn** ou **npm**
+- **Node.js** (22.13+, 24.3+ ou 26+) et **npm**
 - **Python** (v3.10+) et **pip**
 - **MongoDB** (installé localement ou via Docker)
 - Application **Expo Go** installée sur votre smartphone (disponible sur l'App Store / Google Play) si vous souhaitez tester sur mobile.
@@ -95,8 +99,7 @@ Cela démarrera une instance MongoDB accessible sur `mongodb://localhost:27017`.
 
 2. Installez les dépendances :
    ```bash
-   yarn install
-   # ou : npm install
+   npm ci
    ```
 
 3. Configurez les variables d'environnement dans un fichier `.env` :
@@ -132,9 +135,26 @@ Vous pouvez également créer un nouveau compte directement depuis l'écran de c
 
 ## 🗺️ Cartographie et Routage
 
-- **Fond de carte :** Par défaut, l'application fonctionne avec OpenStreetMap / CARTO / Leaflet sans nécessiter de clé API payante.
-- **Routage et accrochage de parcours (Snap) :** Les calculs d'itinéraires piétons utilisent le moteur OSRM public d'OpenStreetMap.
-- **Google Maps (optionnel) :** Si vous possédez une clé API Google Maps, vous pouvez la renseigner dans les variables d'environnement (`EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_KEY`, `EXPO_PUBLIC_GOOGLE_MAPS_IOS_KEY`, `GOOGLE_MAPS_BROWSER_KEY`).
+- **Un seul moteur de carte :** Leaflet 1.9.4 et le fond CARTO Positron, sur toutes les plateformes. Le même document est affiché dans une iframe sur le web et une WebView sur mobile. La carte ne dépend pas du backend pour s'afficher.
+- **Clé CARTO :** renseignez `EXPO_PUBLIC_CARTO_API_KEY` dans `frontend/.env`, puis redémarrez Expo. [Obtenez votre propre clé CARTO](https://www.carto.com/basemaps/apikey/). Sans clé, les tracés restent visibles mais le fond de carte est indisponible. Les attributions OpenStreetMap et CARTO restent affichées.
+- **Conditions CARTO :** une clé est requise. Au 10 novembre 2026, CARTO annonce des paliers gratuits sous quotas ; consulter les [conditions actuelles](https://www.carto.com/legal/basemap-terms/index.html) avant publication.
+- **Routage piéton et recalage GPS :** FOSSGIS / OSRM via le backend. `OSRM_ROUTING_BASE_URL` permet de configurer une instance compatible. Les tuiles CARTO et le routage sont deux services distincts.
+- **GPS :** enregistrement au premier plan ; conservez Doggo ouvert pendant la balade.
+
+## Authentification autonome
+
+L'inscription et la connexion par email/mot de passe sont gérées par l'API et MongoDB. Aucun service d'authentification externe n'est appelé. Les sessions existantes sont conservées jusqu'à leur expiration normale. Les comptes créés uniquement via l'ancien fournisseur Google n'ont pas de mot de passe local : leur accès par email nécessite un processus de récupération de compte, qui n'est pas encore implémenté. La connexion Google et l'ancien échange de session ont été retirés.
+
+## Vérification
+
+```bash
+cd frontend
+npm test
+npm run typecheck
+npm run lint
+```
+
+Pour les tests backend : installez `backend/requirements-dev.txt`, démarrez l'API et MongoDB sur une **base de test**, définissez `EXPO_PUBLIC_BACKEND_URL`, puis lancez `python -m pytest backend/tests`. Ces tests créent des données. Le fichier `test_auth_standalone.py` utilise une base en mémoire et peut être exécuté seul sans MongoDB ni service externe.
 
 ---
 
@@ -154,7 +174,8 @@ Doggo-App/
 │   │   └── walk/[id].tsx     # Fiche détaillée d'une balade
 │   ├── src/                  # Composants, Hooks et Contexte
 │   │   ├── AuthContext.tsx   # Gestion de la session utilisateur
-│   │   ├── DoggoMap.tsx      # Composant carte interactif
+│   │   ├── DoggoMap.tsx      # Contrôleur carte / GPS
+│   │   ├── maps/             # Rendu Leaflet partagé et transports web/mobile
 │   │   ├── useRouteRecorder.ts # Enregistrement GPS en direct
 │   │   └── api.ts            # Client HTTP API
 │   ├── app.json              # Configuration Expo (Nom, Bundle ID, Permissions)

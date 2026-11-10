@@ -6,7 +6,7 @@ import { useAuth } from "../../src/AuthContext";
 import { colors, radius, spacing } from "../../src/theme";
 
 export default function LoginScreen() {
-  const { loginEmail, registerEmail, loginGoogle } = useAuth();
+  const { loginEmail, registerEmail } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [mode, setMode] = useState<"login" | "register">("login");
@@ -24,12 +24,6 @@ export default function LoginScreen() {
     } catch (e: any) {
       setErr(e.message || "Error");
     } finally { setBusy(false); }
-  };
-
-  const googleLogin = async () => {
-    setErr(""); setBusy(true);
-    try { await loginGoogle(); } catch (e: any) { setErr(e.message || "Google sign-in failed"); }
-    finally { setBusy(false); }
   };
 
   return (
@@ -66,12 +60,6 @@ export default function LoginScreen() {
             {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnText}>{mode === "login" ? "Sign in" : "Create account"}</Text>}
           </Pressable>
 
-          <View style={styles.divider}><View style={styles.line} /><Text style={styles.orText}>OR</Text><View style={styles.line} /></View>
-
-          <Pressable testID="auth-google-button" style={styles.googleBtn} onPress={googleLogin} disabled={busy}>
-            <Text style={styles.googleBtnText}>Continue with Google</Text>
-          </Pressable>
-
           <Pressable testID="auth-guest-button" style={styles.guestBtn} onPress={() => router.replace("/(tabs)/explore")}>
             <Text style={styles.guestBtnText}>Browse as guest</Text>
           </Pressable>
@@ -98,11 +86,6 @@ const styles = StyleSheet.create({
   input: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: 12, fontSize: 15, color: colors.onSurface, backgroundColor: colors.surface },
   primaryBtn: { backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 14, alignItems: "center" },
   primaryBtnText: { color: colors.onBrand, fontWeight: "700", fontSize: 15 },
-  divider: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginVertical: spacing.xs },
-  line: { flex: 1, height: 1, backgroundColor: colors.border },
-  orText: { color: colors.muted, fontSize: 12, fontWeight: "600" },
-  googleBtn: { borderWidth: 1, borderColor: colors.borderStrong, borderRadius: radius.md, paddingVertical: 13, alignItems: "center" },
-  googleBtnText: { color: colors.onSurface, fontWeight: "600", fontSize: 15 },
   guestBtn: { alignItems: "center", paddingVertical: 8 },
   guestBtnText: { color: colors.muted, fontSize: 13, textDecorationLine: "underline" },
   err: { color: colors.error, fontSize: 13 },

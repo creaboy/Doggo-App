@@ -7,7 +7,7 @@ import { styles } from './styles';
 export function FinishDialog({ open, gap, busy, error, onComplete, onContinue }: {
   open: boolean; gap: number; busy: string; error: string; onComplete: () => void; onContinue: () => void;
 }) {
-  return <Modal visible={open} transparent animationType="fade" onRequestClose={() => !busy && onContinue()}>
+  return <Modal visible={open} transparent animationType="fade" onRequestClose={() => { if (!busy) onContinue(); }}>
     <View style={styles.overlay} testID="finish-dialog"><View style={styles.dialog}><ScrollView contentContainerStyle={{ gap: 16 }}>
       <Text style={styles.title} testID="finish-dialog-title">Rejoindre le départ</Text>
       <Text style={styles.text} testID="finish-distance">Vous êtes encore à {formatMeters(gap)} de votre point de départ. Les balades Doggo se terminent là où elles ont commencé.</Text>

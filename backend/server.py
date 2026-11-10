@@ -10,9 +10,7 @@ from typing import List, Optional, Literal
 import uuid
 import hashlib
 import secrets
-import httpx
 from datetime import datetime, timezone, timedelta
-from fastapi.responses import HTMLResponse
 from route_geometry import validate_loop
 from walking_routing import snap_points, match_points
 
@@ -145,10 +143,6 @@ class LoginInput(BaseModel):
     password: str
 
 
-class SessionInput(BaseModel):
-    session_id: str
-
-
 def hash_password(pw: str) -> str:
     salt = "doggo_static_salt_v1"
     return hashlib.sha256((pw + salt).encode()).hexdigest()
@@ -227,52 +221,6 @@ async def login(inp: LoginInput):
         "expires_at": datetime.now(timezone.utc) + timedelta(days=7),
     })
     return {"session_token": token, "user": {"user_id": user["user_id"], "email": user["email"], "username": user["username"], "picture": user.get("picture")}}
-
-
-@api_router.post("/auth/session")
-async def emergent_session(inp: SessionInput):
-    try:
-        async with httpx.AsyncClient(timeout=10) as h:
-            r = await h.get(
-                "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
-                headers={"X-Session-ID": inp.session_id},
-            )
-        if r.status_code != 200:
-            raise HTTPException(status_code=401, detail="Invalid session")
-        data = r.json()
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Emergent session error: {e}")
-        raise HTTPException(status_code=401, detail="Auth failed")
-
-    email = data["email"].lower()
-    name = data.get("name", email.split("@")[0])
-    picture = data.get("picture")
-    emergent_token = data["session_token"]
-
-    existing = await db.users.find_one({"email": email})
-    if existing:
-        user_id = existing["user_id"]
-        await db.users.update_one({"user_id": user_id}, {"$set": {"username": existing.get("username") or name, "picture": picture}})
-    else:
-        user_id = f"user_{uuid.uuid4().hex[:12]}"
-        await db.users.insert_one({
-            "user_id": user_id,
-            "email": email,
-            "username": name,
-            "picture": picture,
-            "password_hash": None,
-            "created_at": datetime.now(timezone.utc),
-        })
-
-    await db.user_sessions.insert_one({
-        "session_token": emergent_token,
-        "user_id": user_id,
-        "created_at": datetime.now(timezone.utc),
-        "expires_at": datetime.now(timezone.utc) + timedelta(days=7),
-    })
-    return {"session_token": emergent_token, "user": {"user_id": user_id, "email": email, "username": name, "picture": picture}}
 
 
 @api_router.get("/auth/me")
@@ -661,7 +609,7 @@ async def weekly_digest(lat: Optional[float] = None, lng: Optional[float] = None
     return {"new_walks": new_walks, "hazards": recent_hazards, "confirmations": confirmations}
 
 
-# ============ Route snapping (OSRM public demo) ============
+# ============ Pedestrian routing ============
 
 class SnapInput(BaseModel):
     points: List[List[float]]  # [[lat, lng], ...]
@@ -686,15 +634,6 @@ async def match_gps(inp: MatchInput):
     return await match_points(inp.points, inp.timestamps, inp.accuracies, inp.start_anchor)
 
 
-@api_router.get("/maps/view", response_class=HTMLResponse)
-async def maps_view():
-    from urllib.parse import quote
-    key = os.environ.get("GOOGLE_MAPS_BROWSER_KEY", "")
-    template = (ROOT_DIR / "maps_view.html").read_text()
-    return HTMLResponse(template.replace("__GOOGLE_BROWSER_KEY__", quote(key, safe="")),
-                        headers={"Cache-Control": "no-store", "Referrer-Policy": "strict-origin-when-cross-origin"})
-
-
 @api_router.get("/")
 async def root():
     return {"message": "Doggo API"}
@@ -706,22 +645,11 @@ SEED_VERSION = 2
 
 
 async def _snap_via_osrm(points: List[List[float]], profile: str = "foot") -> Optional[List[List[float]]]:
-    """Try to snap the given [[lat,lng],...] points to real paths via OSRM. Returns None on failure."""
-    if len(points) < 2:
-        return None
-    coords = ";".join(f"{lng},{lat}" for lat, lng in points)
-    url = f"https://router.project-osrm.org/route/v1/{profile}/{coords}?geometries=geojson&overview=full"
+    """Seed demo walks through the same router as user-created walks, best effort."""
     try:
-        async with httpx.AsyncClient(timeout=15) as h:
-            r = await h.get(url)
-        if r.status_code != 200:
-            return None
-        data = r.json()
-        if not data.get("routes"):
-            return None
-        return [[c[1], c[0]] for c in data["routes"][0]["geometry"]["coordinates"]]
-    except Exception as e:
-        logger.warning(f"OSRM snap failed: {e}")
+        return (await snap_points(points, profile))["coordinates"]
+    except HTTPException as exc:
+        logger.warning("Demo route unavailable: %s", exc.detail)
         return None
 
 

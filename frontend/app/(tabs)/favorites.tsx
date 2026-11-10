@@ -73,7 +73,7 @@ export default function FavoritesScreen() {
                 <Text style={styles.alertSub}>You'll be alerted when you get within 300m of any of them.</Text>
               </View>
             </View>
-          ) : null}
+          ) : undefined}
           renderItem={({ item }) => <WalkCard walk={item} onPress={() => router.push(`/walk/${item.id}`)} />}
         />
       )}

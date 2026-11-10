@@ -21,7 +21,7 @@ export function RoutePreview({ open, draft, duration, title, error, busy, onBack
   const totals = stats(draft);
   const region = useMemo(() => regionFor(draft), [draft]);
   const generated = draft.legs.some(l => l.generated);
-  return <Modal visible={open} animationType="slide" onRequestClose={() => !busy && onBack()}>
+  return <Modal visible={open} animationType="slide" onRequestClose={() => { if (!busy) onBack(); }}>
     <View style={[styles.root, { paddingTop: insets.top }]} testID="route-preview">
       <View style={styles.previewHeader}><Pressable testID="edit-route" disabled={!!busy} style={[styles.small, { alignSelf: 'flex-start' }]} onPress={onBack}><Text style={styles.text}>Retour au tracé</Text></Pressable>
         <Text testID="preview-title" style={styles.title}>Votre boucle complète</Text>

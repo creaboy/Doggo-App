@@ -1,9 +1,11 @@
+﻿param([switch]$ClearCache)
+
 # ==========================================================
 # 🐾 Doggo App - Script de démarrage tout-en-un (PowerShell)
 # Compatible Windows PowerShell 5.1 & PowerShell Core 7+
 # ==========================================================
 
-$ErrorActionPreference = "Continue"
+$ErrorActionPreference = "Stop"
 
 Write-Host ""
 Write-Host "==========================================" -ForegroundColor Cyan
@@ -15,6 +17,42 @@ $rootDir = $PSScriptRoot
 if (-not $rootDir) { $rootDir = (Get-Location).Path }
 $backendDir = Join-Path $rootDir "backend"
 $frontendDir = Join-Path $rootDir "frontend"
+
+# Synchroniser les dependances avant de demarrer des services.
+if (-not (Get-Command node -ErrorAction SilentlyContinue) -or -not (Get-Command npm -ErrorAction SilentlyContinue)) {
+    throw "Node.js et npm sont requis. Installez Node.js 24 LTS puis relancez ce script."
+}
+& node -e "const [major, minor] = process.versions.node.split('.').map(Number); process.exit(major >= 26 || major === 24 && minor >= 3 || major === 22 && minor >= 13 ? 0 : 1)"
+if ($LASTEXITCODE -ne 0) { throw "Expo SDK 58 requiert Node.js 22.13+, 24.3+ ou 26+. Installez Node.js 24 LTS." }
+
+$expoManifest = Join-Path $frontendDir "node_modules/expo/package.json"
+$previousExpo = if (Test-Path -LiteralPath $expoManifest) { (Get-Content -LiteralPath $expoManifest -Raw | ConvertFrom-Json).version } else { "" }
+function Get-FrontendDependencyHash {
+    (@("package.json", "package-lock.json") | ForEach-Object {
+        $dependencyFile = Join-Path $frontendDir $_
+        if (Test-Path -LiteralPath $dependencyFile) { (Get-FileHash -LiteralPath $dependencyFile -Algorithm SHA256).Hash }
+    }) -join ":"
+}
+$dependencyStamp = Join-Path $frontendDir "node_modules/.doggo-dependencies.sha256"
+$dependencyHash = Get-FrontendDependencyHash
+$needsInstall = -not (Test-Path -LiteralPath $dependencyStamp) -or -not (Test-Path -LiteralPath $expoManifest)
+if (-not $needsInstall) { $needsInstall = (Get-Content -LiteralPath $dependencyStamp -Raw).Trim() -ne $dependencyHash }
+if ($needsInstall) {
+    Write-Host "Mise a jour des dependances du projet..." -ForegroundColor Yellow
+    Push-Location $frontendDir
+    try {
+        if (Test-Path -LiteralPath (Join-Path $frontendDir "package-lock.json")) {
+            & npm ci --no-audit --no-fund
+        } else {
+            & npm install --no-audit --no-fund
+        }
+        if ($LASTEXITCODE -ne 0) { throw "Installation npm echouee. Le serveur n'a pas ete demarre." }
+        Set-Content -LiteralPath $dependencyStamp -Value (Get-FrontendDependencyHash) -Encoding ASCII
+    } finally { Pop-Location }
+}
+$installedExpo = (Get-Content -LiteralPath $expoManifest -Raw | ConvertFrom-Json).version
+$sdkChanged = $previousExpo -ne $installedExpo
+Write-Host "Expo installe : $installedExpo (SDK $($installedExpo.Split('.')[0])) - cible Expo Go" -ForegroundColor Green
 
 # 1. Vérification / Lancement de MongoDB
 Write-Host "[1/3] Vérification de MongoDB..." -ForegroundColor Yellow
@@ -35,6 +73,7 @@ if (-not $mongoRunning) {
         Write-Host " ℹ Démarrage de MongoDB via Docker Compose..." -ForegroundColor Cyan
         try {
             docker compose up -d mongodb
+            if ($LASTEXITCODE -ne 0) { throw "Docker Compose a echoue." }
             Start-Sleep -Seconds 2
             Write-Host " ✔ MongoDB démarré dans Docker." -ForegroundColor Green
             $mongoRunning = $true
@@ -105,28 +144,17 @@ $venvPython = Join-Path $venvDir "Scripts\python.exe"
 if (-not (Test-Path $venvPython)) {
     Write-Host " ℹ Création de l'environnement virtuel Python (backend/venv)..." -ForegroundColor Cyan
     & $pythonCmd -m venv $venvDir
+    if ($LASTEXITCODE -ne 0) { throw "Creation de l'environnement Python echouee." }
     Write-Host " ℹ Installation des dépendances Python..." -ForegroundColor Cyan
     & $venvPython -m pip install --upgrade pip
     & $venvPython -m pip install -r (Join-Path $backendDir "requirements.txt")
+    if ($LASTEXITCODE -ne 0) { throw "Installation des dependances Python echouee." }
 }
 
 # Démarrage du processus backend
-$backendProc = Start-Process -FilePath $venvPython -ArgumentList "-m uvicorn server:app --host 0.0.0.0 --port 8000 --reload" -WorkingDirectory $backendDir -PassThru -NoNewWindow
+$backendProc = Start-Process -FilePath $venvPython -ArgumentList "-m uvicorn server:app --host 0.0.0.0 --port 8000 --reload" -WorkingDirectory $backendDir -PassThru -WindowStyle Hidden
 Write-Host " ✔ Backend démarré (PID: $($backendProc.Id)) sur http://localhost:8000" -ForegroundColor Green
 Write-Host " ✔ Documentation Swagger : http://localhost:8000/docs" -ForegroundColor DarkCyan
-
-# 4. Installation des dépendances Frontend si nécessaire
-if (-not (Test-Path (Join-Path $frontendDir "node_modules"))) {
-    Write-Host ""
-    Write-Host " ℹ Installation des dépendances NPM / Expo..." -ForegroundColor Cyan
-    Set-Location $frontendDir
-    if (Get-Command yarn -ErrorAction SilentlyContinue) {
-        yarn install
-    } else {
-        npm install
-    }
-    Set-Location $rootDir
-}
 
 # 5. Lancement d'Expo au premier plan
 Write-Host ""
@@ -140,9 +168,10 @@ Write-Host ""
 
 try {
     Set-Location $frontendDir
-    npx expo start
-} catch {
-    Write-Host " Arrêt en cours..." -ForegroundColor Gray
+    $expoArgs = @("start", "--go")
+    if ($ClearCache -or $sdkChanged) { $expoArgs += "--clear" }
+    & npx --no-install expo @expoArgs
+    if ($LASTEXITCODE -ne 0) { throw "Expo s'est arrete avec le code $LASTEXITCODE." }
 } finally {
     Write-Host ""
     Write-Host "Arrêt du serveur Backend..." -ForegroundColor Yellow

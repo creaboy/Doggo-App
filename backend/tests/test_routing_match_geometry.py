@@ -13,10 +13,7 @@ from route_geometry import validate_loop
 
 
 BASE = os.environ.get("EXPO_PUBLIC_BACKEND_URL")
-if not BASE:
-    pytest.skip("EXPO_PUBLIC_BACKEND_URL is required for API tests", allow_module_level=True)
-BASE = BASE.rstrip("/")
-API = f"{BASE}/api"
+API = f"{BASE.rstrip('/')}/api" if BASE else None
 
 
 @pytest.fixture(scope="module")
@@ -28,6 +25,7 @@ def http():
 
 
 # --- /routing/match endpoint validation and smoke ---
+@pytest.mark.skipif(not BASE, reason="EXPO_PUBLIC_BACKEND_URL is required for API tests")
 class TestRoutingMatch:
     def test_match_smoke_fixture_returns_matched_geometry(self, http):
         payload = {
