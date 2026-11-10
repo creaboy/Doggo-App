@@ -1,5 +1,6 @@
 import { colors } from '../theme';
 import type { Region } from './types';
+import { installPinchZoom, installVectorPinchTransform } from './pinchZoom';
 
 export const FOCUS_DEFAULT_ZOOM = 17;
 export const DEFAULT_REGION: Region = { latitude: 48.85, longitude: 2.35, latitudeDelta: 0.1, longitudeDelta: 0.1 };
@@ -25,7 +26,7 @@ export function buildMapDocument(region: Region): string {
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" />
 <style>html,body,#m{margin:0;padding:0;height:100%;width:100%;background:#F1F4EE;}
 .pin{width:24px;height:24px;border-radius:50%;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.4);box-sizing:border-box;display:flex;align-items:center;justify-content:center;color:#fff;font:700 12px system-ui,sans-serif;}
-.leaflet-container{background:#F1F4EE;}
+.leaflet-container{background:#F1F4EE;touch-action:none;overscroll-behavior:contain;}
 </style></head><body>
 <div id="m" data-testid="doggo-leaflet"></div>
 <script>
@@ -42,7 +43,9 @@ function post(obj) {
 <script>
 (function(){
   if (!window.L) return;
-  var map = L.map('m', {zoomControl: true, attributionControl: true, minZoom: 1, maxBounds: [[-85.0511, -Infinity], [85.0511, Infinity]], maxBoundsViscosity: 1}).setView([${region.latitude}, ${region.longitude}], ${zoom});
+  var map = L.map('m', {zoomControl: true, attributionControl: true, touchZoom: true, zoomSnap: 0, minZoom: 1, maxZoom: 20, bounceAtZoomLimits: false, maxBounds: [[-85.0511, -Infinity], [85.0511, Infinity]], maxBoundsViscosity: 1}).setView([${region.latitude}, ${region.longitude}], ${zoom});
+  (${installPinchZoom.toString()})(map, L);
+  var smoothVectorPinch = (${installVectorPinchTransform.toString()});
   var voyagerUrl = ${JSON.stringify(cartoTileUrl())};
   var basemapLayer = null;
   var basemapName;
@@ -65,7 +68,9 @@ function post(obj) {
           .on('tileerror', fail).on('load', loaded).addTo(map);
       } else {
         if (!L.maplibreGL) throw new Error('MapLibre unavailable');
-        basemapLayer = L.maplibreGL({style:${JSON.stringify(LIBERTY_STYLE_URL)}, attributionControl:{customAttribution:'<a href="https://openfreemap.org/">OpenFreeMap</a> &copy; <a href="https://www.openmaptiles.org/">OpenMapTiles</a> Data from <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'}}).addTo(map);
+        basemapLayer = L.maplibreGL({updateInterval:16, style:${JSON.stringify(LIBERTY_STYLE_URL)}, attributionControl:{customAttribution:'<a href="https://openfreemap.org/">OpenFreeMap</a> &copy; <a href="https://www.openmaptiles.org/">OpenMapTiles</a> Data from <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'}});
+        smoothVectorPinch(basemapLayer, map, L);
+        basemapLayer.addTo(map);
         var gl = basemapLayer.getMaplibreMap();
         gl.on('error', fail);
         gl.on('idle', function(){ if (gl.loaded()) loaded(); });

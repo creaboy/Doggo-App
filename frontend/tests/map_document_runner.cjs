@@ -130,3 +130,5 @@ assert.equal(missingKey.canvas.attributes['data-basemap'], 'liberty', 'keep the 
 assert.equal(missingKey.removed.includes(liberty), false);
 assert.match(missingKey.messages.at(-1).message, /CARTO/);
 console.log('PASS: default Liberty needs no key; unavailable Voyager preserves the existing map and overlays');
+
+require('./pinch_zoom_runner.cjs');
