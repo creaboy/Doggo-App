@@ -1,6 +1,6 @@
 import { colors } from '../theme';
 import type { Region } from './types';
-import { installPinchZoom, installVectorPinchTransform } from './pinchZoom';
+import { PINCH_ZOOM_SCRIPT } from './pinchZoom';
 
 export const FOCUS_DEFAULT_ZOOM = 17;
 export const DEFAULT_REGION: Region = { latitude: 48.85, longitude: 2.35, latitudeDelta: 0.1, longitudeDelta: 0.1 };
@@ -36,6 +36,8 @@ function post(obj) {
   // srcdoc's Location.origin is "null"; the host iframe inherits its parent's origin.
   else window.parent.postMessage(obj, window.parent.location.origin);
 }
+window.addEventListener('error', function(){ post({type:'error'}); });
+window.addEventListener('unhandledrejection', function(){ post({type:'error'}); });
 </script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" onerror="post({type:'error'})"></script>
 <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js" onerror="post({type:'error'})"></script>
@@ -44,8 +46,9 @@ function post(obj) {
 (function(){
   if (!window.L) return;
   var map = L.map('m', {zoomControl: true, attributionControl: true, touchZoom: true, zoomSnap: 0, minZoom: 1, maxZoom: 20, bounceAtZoomLimits: false, maxBounds: [[-85.0511, -Infinity], [85.0511, Infinity]], maxBoundsViscosity: 1}).setView([${region.latitude}, ${region.longitude}], ${zoom});
-  (${installPinchZoom.toString()})(map, L);
-  var smoothVectorPinch = (${installVectorPinchTransform.toString()});
+  ${PINCH_ZOOM_SCRIPT}
+  try { installPinchZoom(map, L); } catch (error) { console.warn('Pinch enhancement unavailable', error); }
+  var smoothVectorPinch = installVectorPinchTransform;
   var voyagerUrl = ${JSON.stringify(cartoTileUrl())};
   var basemapLayer = null;
   var basemapName;

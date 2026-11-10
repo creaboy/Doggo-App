@@ -1,7 +1,9 @@
 const assert = require('assert/strict');
 const path = require('path');
+const vm = require('vm');
 const { makeLoader } = require('./ts_loader.cjs');
-const { installPinchZoom, installVectorPinchTransform } = makeLoader().load(path.join(__dirname, '../src/maps/pinchZoom.ts'));
+const { PINCH_ZOOM_SCRIPT } = makeLoader().load(path.join(__dirname, '../src/maps/pinchZoom.ts'));
+const { installPinchZoom, installVectorPinchTransform } = vm.runInThisContext(`(function(){${PINCH_ZOOM_SCRIPT}; return { installPinchZoom, installVectorPinchTransform };})()`);
 
 class Point {
   constructor(x, y) { this.x = x; this.y = y; }

@@ -5,6 +5,18 @@ const { makeLoader } = require('./ts_loader.cjs');
 
 const { buildMapDocument, DEFAULT_REGION } = makeLoader().load(path.join(__dirname, '../src/maps/leafletDocument.ts'));
 
+// Hermes reports native-code placeholders instead of JavaScript function bodies.
+// Document generation must work even when serializing a function is forbidden.
+const originalFunctionToString = Function.prototype.toString;
+try {
+  Function.prototype.toString = function () { throw new Error('Hermes cannot return function source'); };
+  const html = buildMapDocument(DEFAULT_REGION);
+  assert.ok(html.includes('function installPinchZoom('));
+  assert.ok(!html.includes('[native code]'));
+  for (const match of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) new vm.Script(match[1]);
+} finally { Function.prototype.toString = originalFunctionToString; }
+console.log('PASS: map document generates valid JavaScript without function serialization (Hermes regression)');
+
 function startMap(native = false, apiKey = 'test-key') {
   const saved = process.env.EXPO_PUBLIC_CARTO_API_KEY;
   if (apiKey) process.env.EXPO_PUBLIC_CARTO_API_KEY = apiKey;
