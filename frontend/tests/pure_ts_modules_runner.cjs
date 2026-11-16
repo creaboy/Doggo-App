@@ -517,6 +517,53 @@ test('segment metadata and annotations survive splitting, merging, moving and se
   assert.deepEqual(payload.segments[0].dangers, ['cars']);
 });
 
+test('off-road routing asks for confirmation, supports following paths instead and preserves cancellation', async () => {
+  let calls = 0, confirmations = 0;
+  const rc = loadRouteCompletionWithStub(async () => { calls++; throw new Error('Un point est à plus de 20 m d’un chemin connu.'); });
+  const start = pt(48.85, 2.35), end = offsetMeters(start, 150, 50);
+  const leg = { id: 'field', source: 'draw', freedom: 'leash', snapped: false, coordinates: [start, end] };
+  const direct = await rc.resolvePath(leg, async request => { confirmations++; assert.match(request.reason, /20 m/); return 'direct'; });
+  assert.equal(calls, 1); assert.equal(confirmations, 1);
+  assert.equal(direct.offPath, true); assert.equal(direct.snapped, false);
+  assert.equal(direct.freedom, 'leash');
+  assert.deepEqual(leg.coordinates, [start, end]);
+  await assert.rejects(rc.resolvePath(leg, async () => 'cancel', true), /annulé/);
+  assert.equal(calls, 1, 'explicit free mode can be cancelled without calling the router');
+  const routed = loadRouteCompletionWithStub(async (_path, opts) => ({ coordinates: JSON.parse(opts.body).points }));
+  const follow = await routed.resolvePath(leg, async () => 'paths', true);
+  assert.equal(follow.snapped, true); assert.equal(follow.offPath, false);
+});
+
+test('closing away from known roads accepts a confirmed free return and never reroutes it later', async () => {
+  let calls = 0;
+  const rc = loadRouteCompletionWithStub(async () => { calls++; throw new Error('Point loin du chemin'); });
+  const { routeDraft, segmentEditing } = loadCore();
+  const start = pt(48.85, 2.35), end = offsetMeters(start, 150, 50);
+  const leg = { id: 'field', source: 'draw', freedom: 'free', offPath: true, snapped: false, coordinates: [start, end] };
+  const draft = { start, legs: [leg] };
+  const resolve = candidate => rc.resolvePath(candidate, async () => 'direct');
+  const loop = await rc.completeLoop(draft, resolve);
+  assert.equal(routeDraft.closed(loop), true);
+  assert.equal(loop.legs.at(-1).offPath, true);
+  assert.equal(loop.legs.at(-1).freedom, 'free');
+  assert.equal(calls, 1);
+  await rc.snapDraft(loop, resolve);
+  assert.equal(calls, 1, 'confirmed free segments survive preparation without another road lookup');
+  const split = segmentEditing.splitLeg(loop, 0, offsetMeters(start, 75, 25));
+  assert.equal(split.legs[0].offPath, true); assert.equal(split.legs[1].offPath, true);
+  const meta = makeLoader().load(path.join(__dirname, '../src/create/routeMetadata.ts'));
+  assert.equal(meta.serializeVariant({ name: 'B', draft: split }).segments.every(s => s.off_path), true);
+});
+
+test('accepting raw GPS off-road preserves the recorded geometry rather than connecting its endpoints', () => {
+  const rc = loadRouteCompletionWithStub(async () => { throw new Error('must not route'); });
+  const start = pt(48.85, 2.35), bend = offsetMeters(start, 80, 0), end = offsetMeters(start, 80, 80);
+  const leg = { source: 'gps', freedom: 'caution', coordinates: [start, bend, end] };
+  const saved = rc.acceptOffPath(leg);
+  assert.deepEqual(saved.coordinates, [start, bend, end]);
+  assert.equal(saved.offPath, true); assert.equal(saved.sealed, true);
+});
+
 async function run() {
   let passed = 0;
   const failures = [];

@@ -12,6 +12,7 @@ export type { LatLng, Region, SegmentInput, MarkerInput, MapProps } from './maps
 export const DoggoMap: React.FC<MapProps> = (props) => {
   const gps = useLiveMapLocation();
   const [basemap, setBasemap] = useState<Basemap>('liberty');
+  const [basemapMenu, setBasemapMenu] = useState(false);
   const [focus, setFocus] = useState<MapProps['locationFocus']>();
   const pendingFocus = useRef(false);
   const autoFocused = useRef(false);
@@ -36,7 +37,7 @@ export const DoggoMap: React.FC<MapProps> = (props) => {
     }
   };
   const scene = useMemo(() => ({
-    segments: props.segments?.map(({ coordinates, freedom, generated, pending }) => ({ coordinates, freedom, generated, pending })),
+    segments: props.segments?.map(({ coordinates, freedom, generated, pending, offPath }) => ({ coordinates, freedom, generated, pending, offPath })),
     markers: (props.markers || []).map(({ id, coordinate, color, label, badge, pointIndex }) => ({ id, coordinate, color, label, badge, pointIndex })),
     segmentEditable: !!props.onSegmentPress,
     longPressEnabled: !!props.onLongPress,
@@ -78,22 +79,22 @@ export const DoggoMap: React.FC<MapProps> = (props) => {
         <Text style={mapStyles.retry}>Réessayer</Text>
       </Pressable>
     </View>}
-    {!!props.segments?.length && <Pressable accessibilityRole="link" onPress={() => Linking.openURL('https://www.openstreetmap.org/fixthemap')}>
-      <Text style={mapStyles.credit}>Tracés © OpenStreetMap · FOSSGIS · Corriger la carte</Text>
-    </Pressable>}
-    <View style={mapStyles.basemaps} accessibilityRole="radiogroup">
+    {voyagerAvailable() && <View style={mapStyles.basemaps}>
+      <Pressable testID={`${props.testID}-basemap-menu`} accessibilityRole="button" accessibilityLabel="Choisir le fond de carte" style={mapStyles.basemapToggle} onPress={() => setBasemapMenu(!basemapMenu)}><Text style={{ fontSize: 19, color: colors.onSurface }}>◫</Text></Pressable>
+      {basemapMenu && <View style={mapStyles.basemapOptions} accessibilityRole="radiogroup">
       {(['liberty', 'voyager'] as const).map(value => {
         const unavailable = value === 'voyager' && !voyagerAvailable();
         return <Pressable key={value} testID={`${props.testID}-basemap-${value}`} accessibilityRole="radio"
           aria-checked={basemap === value} accessibilityState={{ checked: basemap === value, disabled: unavailable }} disabled={unavailable}
-          onPress={() => { if (value !== basemap) { setBasemap(value); setMapLoading(true); setError(''); } }}
+          onPress={() => { setBasemapMenu(false); if (value !== basemap) { setBasemap(value); setMapLoading(true); setError(''); } }}
           style={[mapStyles.basemap, basemap === value && mapStyles.selectedBasemap, unavailable && { opacity: .55 }]}>
           <Text style={{ color: basemap === value ? colors.onBrand : colors.onSurface, fontSize: 12 }}>
-            {value === 'liberty' ? 'Liberty' : unavailable ? 'Voyager · clé requise' : 'CARTO Voyager'}
+            {value === 'liberty' ? 'Liberty' : 'CARTO Voyager'}
           </Text>
         </Pressable>;
       })}
-    </View>
+      </View>}
+    </View>}
     <MapLocationControl prefix={props.testID || 'doggo-map'} status={gps.status} onPress={locate} />
   </View>;
 };
@@ -102,8 +103,9 @@ const mapStyles = StyleSheet.create({
   loading: { position: 'absolute', top: 16, left: 16 },
   error: { position: 'absolute', top: 12, left: 12, right: 72, padding: 12, borderRadius: 12, backgroundColor: colors.surfaceSecondary },
   retry: { color: colors.brandPrimary, paddingVertical: 12, fontWeight: '700' },
-  basemaps: { position: 'absolute', bottom: 38, left: 8, flexDirection: 'row', gap: 4 },
+  basemaps: { position: 'absolute', top: 86, right: 18, alignItems: 'flex-end', gap: 4 },
+  basemapToggle: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 10, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
+  basemapOptions: { flexDirection: 'row', gap: 4 },
   basemap: { paddingHorizontal: 10, minHeight: 40, justifyContent: 'center', borderRadius: 10, backgroundColor: colors.surfaceSecondary },
   selectedBasemap: { backgroundColor: colors.brandPrimary },
-  credit: { fontSize: 10, color: colors.muted, textAlign: 'center', padding: 4 },
 });

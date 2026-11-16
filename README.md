@@ -136,19 +136,22 @@ Vous pouvez également créer un nouveau compte directement depuis l'écran de c
 ## 🗺️ Cartographie et Routage
 
 - **Fond par défaut :** Liberty d'[OpenFreeMap](https://openfreemap.org/quick_start/), sans inscription ni clé API, avec ses libellés et points d'intérêt. Leaflet conserve les interactions et les superpositions de balades ; MapLibre GL affiche le fond vectoriel Liberty. Le même document fonctionne dans une iframe web et une WebView mobile, sans module natif supplémentaire.
-- **Comparer les fonds :** le sélecteur de la carte propose Liberty et CARTO Voyager. Changer de fond conserve le cadrage, les tracés, les points et le GPS.
-- **CARTO Voyager (optionnel) :** renseignez `EXPO_PUBLIC_CARTO_API_KEY` dans `frontend/.env` puis redémarrez Expo pour activer Voyager. [Obtenez votre propre clé CARTO](https://www.carto.com/basemaps/apikey/). Sans clé, Liberty fonctionne et l'option Voyager indique « clé requise ». Les attributions propres à chaque fond restent visibles.
+- **Comparer les fonds :** si CARTO est configuré, le petit bouton de fonds de carte ouvre le choix Liberty / CARTO Voyager. Changer de fond conserve le cadrage, les tracés, les points et le GPS.
+- **CARTO Voyager (optionnel) :** renseignez `EXPO_PUBLIC_CARTO_API_KEY` dans `frontend/.env` puis redémarrez Expo pour activer Voyager. [Obtenez votre propre clé CARTO](https://www.carto.com/basemaps/apikey/). Sans clé, Liberty fonctionne sans afficher de sélecteur ni de message « clé requise ».
+- **Attributions :** une seule ligne en bas de la carte cite OpenMapTiles / OpenStreetMap (ou CARTO / OpenStreetMap), avec un lien « Corriger » pour les tracés utilisant le routage FOSSGIS. Les bandeaux Leaflet et les crédits en double ont été retirés.
 - **Points d'intérêt :** Liberty conserve son style complet (commerces, services et autres libellés, selon le niveau de zoom et les données OpenStreetMap). Les points d'eau, dangers et autres contributions des balades sont affichés au-dessus des deux fonds.
 - **Routage piéton et recalage GPS :** FOSSGIS / OSRM via le backend. `OSRM_ROUTING_BASE_URL` permet de configurer une instance compatible. Le fond de carte et le routage sont deux services distincts.
 - **GPS :** enregistrement au premier plan ; conservez Doggo ouvert pendant la balade.
 
 ## Créer une balade
 
-1. **Tracer** : poser les grands points de passage sur la carte ou enregistrer sa marche au GPS. Le bouton « Nouveau segment ici » marque un changement de portion pendant la marche. Un appui long (550 ms) ouvre un repère d’intérêt ou de danger ; déplacer le doigt ou pincer annule cet appui. Fermer la boucle avant de continuer.
+1. **Tracer** : choisir d’abord « Dessiner sur la carte » ou « Marcher avec le GPS ». La carte occupe ensuite l’espace disponible ; les détails sont rangés dans « Outils ». En dessin, « Chemins » calcule le parcours piéton et « Libre » permet de couper à travers champs après confirmation. Si aucun chemin ne rejoint les points, le même choix est proposé, y compris lors de la fermeture de la boucle. Les passages libres gardent la couleur du segment et sont en pointillés. Le bouton « Nouveau segment » marque un changement de portion pendant la marche. Un appui long (550 ms) ouvre un repère d’intérêt ou de danger ; déplacer le doigt ou pincer annule cet appui.
 2. **Affiner** : toucher une portion pour la découper et renseigner ses caractéristiques, intérêts, dangers et conseils. Toucher un point numéroté pour le supprimer ou le déplacer ; les portions voisines sont recalculées. Le départ reste fixe. Les retouches conservent les repères et les détails des segments.
 3. **Finaliser** : titre, description et informations générales, puis publication. A est l’itinéraire principal ; B, C… sont des boucles optionnelles partageant son départ. Elles peuvent être dessinées depuis zéro ou copiées puis retouchées. La fiche de balade permet de choisir une boucle et de consulter ses portions.
 
 Les variantes et leurs repères sont enregistrés dans la même balade. L’API vérifie toutes les boucles avant de créer le document. Les anciennes balades à itinéraire unique restent compatibles ; aucune migration ni dépendance supplémentaire n’est nécessaire. La durée saisie correspond à A.
+
+Les segments confirmés hors chemin sont enregistrés avec `off_path: true` ; ils restent modifiables et publiables sans être à nouveau soumis au routage. Si le recalage GPS échoue au moment de terminer, l’utilisateur peut conserver explicitement sa trace brute. La validation vérifie la continuité et la fermeture géométriques de la boucle, sans imposer une proximité avec un chemin connu.
 
 ## Authentification autonome
 

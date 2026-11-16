@@ -9,8 +9,8 @@ export type SegmentDetails = { features?: string[]; interests?: string[]; danger
 export type RouteVariant = { name: string; draft: Draft };
 
 export function serializeSegments(legs: Leg[]) {
-  return legs.map(({ freedom, coordinates, features = [], interests = [], dangers = [], notes = '' }) => ({
-    freedom, coordinates: coordinates.map(p => [p.latitude, p.longitude]), features, interests, dangers, notes,
+  return legs.map(({ freedom, coordinates, offPath = false, features = [], interests = [], dangers = [], notes = '' }) => ({
+    freedom, coordinates: coordinates.map(p => [p.latitude, p.longitude]), off_path: offPath, features, interests, dangers, notes,
   }));
 }
 export function serializeNotes(notes: RouteNote[] = []) {

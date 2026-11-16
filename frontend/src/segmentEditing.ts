@@ -1,9 +1,9 @@
 import type { LatLng } from './DoggoMap';
-import { Draft, legId, legDistance, meters } from './routeDraft';
+import { Draft, legId, legDistance, meters, resolvedLeg } from './routeDraft';
 
 export function splitLeg(d: Draft, index: number, at: LatLng): Draft {
   const leg = d.legs[index];
-  if (!leg || !leg.snapped) throw new Error('Ajustez d’abord ce segment aux chemins.');
+  if (!leg || !resolvedLeg(leg)) throw new Error('Ajustez d’abord ce segment ou confirmez son passage libre.');
   const pts = leg.coordinates;
   let best = { distance: Infinity, edge: 0, point: pts[0] };
   // Project onto the closest polyline edge, not the closest sampled vertex.

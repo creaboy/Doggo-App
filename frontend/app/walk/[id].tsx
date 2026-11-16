@@ -56,6 +56,7 @@ export default function WalkDetail() {
 
   const segments: SegmentInput[] = route.segments.map((s: any) => ({
     freedom: s.freedom,
+    offPath: !!s.off_path,
     coordinates: s.coordinates.map((c: number[]) => ({ latitude: c[0], longitude: c[1] })),
   }));
 

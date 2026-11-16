@@ -87,3 +87,14 @@ def test_old_single_route_payload_is_still_supported(api):
         del body['segments'][0][key]
     assert client.post('/api/walks', json=body).status_code == 200
     assert database.walks.documents[0]['variants'] == []
+
+
+def test_confirmed_off_road_loops_are_published_without_road_distance_checks(api):
+    client, database = api
+    body = payload()
+    body['segments'][0]['off_path'] = True
+    body['variants'][0]['segments'][0]['off_path'] = True
+    response = client.post('/api/walks', json=body)
+    assert response.status_code == 200, response.text
+    assert database.walks.documents[0]['segments'][0]['off_path'] is True
+    assert database.walks.documents[0]['variants'][0]['segments'][0]['off_path'] is True

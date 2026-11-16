@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 class RouteSegment(BaseModel):
     coordinates: List[List[float]]  # [[lat, lng], ...]
     freedom: Literal["free", "caution", "leash"] = "free"
+    off_path: bool = False
     features: List[Literal["shade", "water", "swimming", "parking", "low_traffic", "easy_path", "quiet"]] = Field(default_factory=list)
     interests: List[Literal["water", "swimming", "parking", "viewpoint", "trash", "other"]] = Field(default_factory=list)
     dangers: List[Literal["cars", "crossing", "caterpillars", "boars", "livestock", "aggressive_dogs", "toxic", "hunting", "path_closed", "dogs_prohibited", "other"]] = Field(default_factory=list)

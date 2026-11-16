@@ -1,7 +1,7 @@
 import type { StyleProp, ViewStyle } from "react-native";
 
 export type LatLng = { latitude: number; longitude: number };
-export type SegmentInput = { coordinates: LatLng[]; freedom: "free" | "caution" | "leash"; generated?: boolean; pending?: boolean };
+export type SegmentInput = { coordinates: LatLng[]; freedom: "free" | "caution" | "leash"; generated?: boolean; pending?: boolean; offPath?: boolean };
 export type MarkerInput = { id: string; coordinate: LatLng; color?: string; label?: string; badge?: string; pointIndex?: number; onPress?: () => void };
 export type Region = { latitude: number; longitude: number; latitudeDelta: number; longitudeDelta: number };
 

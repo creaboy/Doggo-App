@@ -28,8 +28,11 @@ export function buildMapDocument(region: Region): string {
 .pin{width:24px;height:24px;border-radius:50%;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.4);box-sizing:border-box;display:flex;align-items:center;justify-content:center;color:#fff;font:700 12px system-ui,sans-serif;}
 .leaflet-container{background:#F1F4EE;touch-action:none;overscroll-behavior:contain;}
 .gps-dot{width:22px;height:22px;box-sizing:border-box;border:3px solid ${colors.surfaceSecondary};border-radius:50%;background:${colors.location};box-shadow:0 0 0 2px #0001;}
+#credits{position:absolute;bottom:0;right:0;z-index:1000;background:#ffffffdf;padding:1px 4px;font:10px/16px system-ui,sans-serif;color:#454545;white-space:nowrap;max-width:100%;box-sizing:border-box;}
+#credits a{color:inherit;text-decoration:none;}
 </style></head><body>
 <div id="m" data-testid="doggo-leaflet"></div>
+<div id="credits" aria-label="Attributions cartographiques"></div>
 <script>
 function post(obj) {
   obj.doggoMap = true;
@@ -46,13 +49,18 @@ window.addEventListener('unhandledrejection', function(){ post({type:'error'}); 
 <script>
 (function(){
   if (!window.L) return;
-  var map = L.map('m', {zoomControl: true, attributionControl: true, touchZoom: true, zoomSnap: 0, minZoom: 1, maxZoom: 20, bounceAtZoomLimits: false, maxBounds: [[-85.0511, -Infinity], [85.0511, Infinity]], maxBoundsViscosity: 1}).setView([${region.latitude}, ${region.longitude}], ${zoom});
+  var map = L.map('m', {zoomControl: true, attributionControl: false, touchZoom: true, zoomSnap: 0, minZoom: 1, maxZoom: 20, bounceAtZoomLimits: false, maxBounds: [[-85.0511, -Infinity], [85.0511, Infinity]], maxBoundsViscosity: 1}).setView([${region.latitude}, ${region.longitude}], ${zoom});
   ${PINCH_ZOOM_SCRIPT}
   try { installPinchZoom(map, L); } catch (error) { console.warn('Pinch enhancement unavailable', error); }
   var voyagerUrl = ${JSON.stringify(cartoTileUrl())};
   var basemapLayer = null;
   var basemapName;
   var basemapGeneration = 0;
+  var routeCredits = false;
+  function updateCredits() {
+    var provider = basemapName === 'voyager' ? '<a href="https://carto.com/attribution/" target="_blank" rel="noopener">© CARTO</a>' : '<a href="https://openmaptiles.org/" target="_blank" rel="noopener">© OpenMapTiles</a>';
+    document.getElementById('credits').innerHTML = provider + ' · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a>' + (routeCredits ? ' · <a href="https://www.openstreetmap.org/fixthemap" target="_blank" rel="noopener" title="Corriger la carte · routage FOSSGIS">Corriger</a>' : '');
+  }
   function setBasemap(name) {
     name = name === 'voyager' ? 'voyager' : 'liberty';
     if (name === basemapName) return;
@@ -60,18 +68,19 @@ window.addEventListener('unhandledrejection', function(){ post({type:'error'}); 
     var generation = ++basemapGeneration;
     if (basemapLayer) { map.removeLayer(basemapLayer); basemapLayer = null; }
     basemapName = name;
+    updateCredits();
     var failed = false;
     function fail() { if (generation === basemapGeneration) { failed = true; post({type:'error'}); } }
     function loaded() { if (generation === basemapGeneration && !failed) post({type:'tilesLoaded'}); }
     post({type:'basemapLoading'});
     try {
       if (name === 'voyager') {
-        basemapLayer = L.tileLayer(voyagerUrl, {maxZoom:20, subdomains:'abcd', attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a> &copy; <a href="https://carto.com/attribution/">CARTO</a>'})
+        basemapLayer = L.tileLayer(voyagerUrl, {maxZoom:20, subdomains:'abcd'})
           .on('loading', function(){ failed = false; })
           .on('tileerror', fail).on('load', loaded).addTo(map);
       } else {
         if (!L.maplibreGL) throw new Error('MapLibre unavailable');
-        basemapLayer = L.maplibreGL({updateInterval:16, style:${JSON.stringify(LIBERTY_STYLE_URL)}, attributionControl:{customAttribution:'<a href="https://openfreemap.org/">OpenFreeMap</a> &copy; <a href="https://www.openmaptiles.org/">OpenMapTiles</a> Data from <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'}});
+        basemapLayer = L.maplibreGL({updateInterval:16, style:${JSON.stringify(LIBERTY_STYLE_URL)}, attributionControl:false});
         // Keep the adapter's live vector-camera updates during pinch and inertia.
         // Transforming a frozen canvas here prevents labels/tiles from rendering.
         basemapLayer.addTo(map);
@@ -115,6 +124,8 @@ window.addEventListener('unhandledrejection', function(){ post({type:'error'}); 
   map.on('click', function(e){ if(Date.now()>=suppressClickUntil) post({type:'press', lat:e.latlng.lat, lng:e.latlng.lng}); });
 
   window.__renderData = function(data){
+    routeCredits=!!(data.segments || []).some(function(seg){return !seg.offPath;});
+    updateCredits();
     longPressEnabled=!!data.longPressEnabled;
     if(!longPressEnabled) cancelHold();
     layers.forEach(function(l){ map.removeLayer(l); });
@@ -126,9 +137,10 @@ window.addEventListener('unhandledrejection', function(){ post({type:'error'}); 
       all = all.concat(pts);
       var color = seg.freedom === 'free' ? '${colors.success}' : seg.freedom === 'caution' ? '${colors.warning}' : '${colors.error}';
       var selected = data.selectedSegmentIndex===index;
-      var casing = L.polyline(pts, {color:'${colors.surfaceSecondary}', weight: selected ? 12 : 8, opacity:.95, interactive:false}).addTo(map);
+      var dash = seg.offPath || seg.pending ? '8 8' : null;
+      var casing = L.polyline(pts, {color:'${colors.surfaceSecondary}', weight: selected ? 12 : 8, opacity:.95, interactive:false,dashArray:dash}).addTo(map);
       layers.push(casing);
-      var pl = L.polyline(pts, {color: seg.pending ? '${colors.warning}' : color, weight: selected ? 8 : 5, dashArray:seg.generated || seg.pending ? '8 8' : null}).addTo(map);
+      var pl = L.polyline(pts, {color: seg.pending ? '${colors.warning}' : color, weight: selected ? 8 : 5, dashArray:dash}).addTo(map);
       layers.push(pl);
       if(data.segmentEditable){ var hit=L.polyline(pts,{weight:44,opacity:0}).addTo(map); hit.on('click',function(e){L.DomEvent.stopPropagation(e);if(Date.now()>=suppressClickUntil) post({type:'segmentPress',index:index,lat:e.latlng.lat,lng:e.latlng.lng});});layers.push(hit); }
     });

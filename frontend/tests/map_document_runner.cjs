@@ -86,7 +86,10 @@ for (const native of [false, true]) {
   m.window.__doggoUpdate(data);
   const liberty = m.layers.find(l => l.kind === 'liberty');
   assert.equal(liberty.points, 'https://tiles.openfreemap.org/styles/liberty');
-  assert.match(liberty.options.attributionControl.customAttribution, /OpenMapTiles/);
+  assert.equal(liberty.options.attributionControl, false, 'use one shared compact attribution');
+  assert.match(m.canvas.innerHTML, /OpenMapTiles/);
+  assert.match(m.canvas.innerHTML, /openstreetmap.org\/copyright/);
+  assert.match(m.canvas.innerHTML, /fixthemap/);
   liberty.gl.events.idle();
   assert.equal(m.messages.at(-1).type, 'tilesLoaded');
   m.map.zoom = 15;
@@ -131,8 +134,8 @@ for (const native of [false, true]) {
   m.window.__doggoUpdate({ ...data, basemap: 'voyager' });
   const tiles = m.layers.find(l => l.kind === 'tiles');
   assert.match(tiles.points, /cartocdn\.com\/rastertiles\/voyager\/.*\?key=test-key$/);
-  assert.match(tiles.options.attribution, /OpenStreetMap contributors/);
-  assert.match(tiles.options.attribution, /CARTO/);
+  assert.match(m.canvas.innerHTML, /OpenStreetMap/);
+  assert.match(m.canvas.innerHTML, /CARTO/);
   assert.ok(m.removed.includes(liberty));
   assert.equal(m.views.length, priorViews, 'switching backgrounds must not recenter');
   assert.equal(m.fits.length, priorFits);
@@ -186,5 +189,13 @@ assert.equal(dot.kind, 'marker', 'GPS uses a DOM marker rather than a scaled SVG
 assert.deepEqual(Array.from(dot.options.icon.iconSize), [22, 22]);
 assert.equal(dot.options.interactive, false);
 console.log('PASS: GPS marker has a constant pixel size independent of SVG zoom scaling');
+
+const direct = startMap();
+direct.window.__doggoUpdate({ scene: { ...scene(), segments: [{ ...scene().segments[0], offPath: true }] } });
+const freeLine = direct.layers.find(l => l.kind === 'line' && l.options.weight === 8);
+assert.equal(freeLine.options.dashArray, '8 8');
+assert.equal(freeLine.options.color, '#3A7D44', 'confirmed free segments retain their freedom color');
+assert.doesNotMatch(direct.canvas.innerHTML, /fixthemap/, 'no routing credit for entirely free geometry');
+console.log('PASS: confirmed free segments are dashed in the route color, with a single compact credit');
 
 require('./pinch_zoom_runner.cjs');

@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, Pressable, TextInput } from 'react-native';
-import { legDistance } from '../routeDraft';
+import { legDistance, resolvedLeg } from '../routeDraft';
 import type { Draft, Freedom } from '../routeDraft';
 import { SegmentPicker } from './SegmentPicker';
 import type { DraftSelection } from './selection';
@@ -10,17 +10,21 @@ import { featureOptions, interestOptions, dangerOptions } from './routeMetadata'
 import type { SegmentDetails } from './routeMetadata';
 import { colors } from '../theme';
 
-export function SegmentEditor({ draft, selection, prefix, disabled, recording, onFreedom, onInsert, onClose, onDetails }: {
+export function SegmentEditor({ draft, selection, prefix, disabled, recording, onFreedom, onInsert, onClose, onDetails, onPath }: {
   draft: Draft; selection: DraftSelection | null; prefix: string; disabled: boolean; recording: boolean;
   onFreedom: (index: number, value: Freedom) => void; onInsert: () => void; onClose: () => void;
   onDetails?: (index: number, details: SegmentDetails) => void;
+  onPath?: (index: number, offPath: boolean) => void;
 }) {
   if (selection?.kind !== 'segment' || !draft.legs[selection.index]) return null;
   const leg = draft.legs[selection.index];
-  const canInsert = !!selection.point && !!leg.snapped && !disabled && !recording;
+  const canInsert = !!selection.point && resolvedLeg(leg) && !disabled && !recording;
   return <View style={styles.card} testID={`${prefix}-editor`}>
     <Text testID={`${prefix}-selected-label`} style={styles.text}>Segment {selection.index + 1} sélectionné · {(legDistance(leg) / 1000).toFixed(2)} km</Text>
     <SegmentPicker prefix={`${prefix}-rule`} value={leg.freedom} onChange={value => onFreedom(selection.index, value)} disabled={disabled} />
+    {onPath && <View style={styles.row}>{[false, true].map(offPath => <Pressable key={String(offPath)} disabled={disabled} testID={`${prefix}-path-${offPath ? 'direct' : 'paths'}`}
+      style={[styles.chip, !!leg.offPath === offPath && styles.active]} onPress={() => { if (!!leg.offPath !== offPath) onPath(selection.index, offPath); }}>
+      <Text style={[styles.text, !!leg.offPath === offPath && styles.onBrand]}>{offPath ? 'Passage libre ···' : 'Suivre les chemins'}</Text></Pressable>)}</View>}
     {onDetails && <>
       <ChoiceChips label="Caractéristiques" prefix={`${prefix}-feature`} options={featureOptions} values={leg.features || []} disabled={disabled} onChange={features => onDetails(selection.index, { features })} />
       <ChoiceChips label="Intérêts sur cette portion" prefix={`${prefix}-interest`} options={interestOptions} values={leg.interests || []} disabled={disabled} onChange={interests => onDetails(selection.index, { interests })} />

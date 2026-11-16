@@ -8,6 +8,7 @@ let nextId = 0;
 const sessionId = Date.now().toString(36);
 export const legId = () => `leg-${sessionId}-${++nextId}`;
 export const emptyDraft = (): Draft => ({ start: null, legs: [] });
+export const resolvedLeg = (leg: Leg) => !!(leg.snapped || leg.offPath);
 
 export function meters(a: LatLng, b: LatLng) {
   const rad = Math.PI / 180;
@@ -91,12 +92,13 @@ export function removeVertex(d: Draft, index: number): Draft {
   const to = after.coordinates.at(-1)!;
   if (!from || !to) throw new Error('Ce point ne peut pas être supprimé.');
   if (meters(from, to) < 0.5) throw new Error('Les points voisins sont confondus : supprimez plutôt le doublon.');
-  const rebuilt = before.source === 'draw' && after.source === 'draw';
+  const rebuilt = before.source === 'draw' && after.source === 'draw' && !before.offPath && !after.offPath;
   const merged: Leg = rebuilt
     ? { ...before, id: legId(), coordinates: [from, to], source: 'draw', snapped: false }
     : { ...before, id: legId(), coordinates: [...before.coordinates, ...after.coordinates.slice(1)],
       gpsSamples: before.gpsSamples || after.gpsSamples ? [...(before.gpsSamples || []), ...(after.gpsSamples || [])] : undefined,
       snapped: !!(before.snapped && after.snapped), sealed: undefined };
+  merged.offPath = !!(before.offPath || after.offPath);
   merged.features = [...new Set([...(before.features || []), ...(after.features || [])])];
   merged.interests = [...new Set([...(before.interests || []), ...(after.interests || [])])];
   merged.dangers = [...new Set([...(before.dangers || []), ...(after.dangers || [])])];
