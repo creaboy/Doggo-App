@@ -27,6 +27,7 @@ export function buildMapDocument(region: Region): string {
 <style>html,body,#m{margin:0;padding:0;height:100%;width:100%;background:#F1F4EE;}
 .pin{width:24px;height:24px;border-radius:50%;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.4);box-sizing:border-box;display:flex;align-items:center;justify-content:center;color:#fff;font:700 12px system-ui,sans-serif;}
 .leaflet-container{background:#F1F4EE;touch-action:none;overscroll-behavior:contain;}
+.gps-dot{width:22px;height:22px;box-sizing:border-box;border:3px solid ${colors.surfaceSecondary};border-radius:50%;background:${colors.location};box-shadow:0 0 0 2px #0001;}
 </style></head><body>
 <div id="m" data-testid="doggo-leaflet"></div>
 <script>
@@ -84,14 +85,38 @@ window.addEventListener('unhandledrejection', function(){ post({type:'error'}); 
   var layers = [];
   var sceneKey;
   var userMarker = null;
+  var userDot = null;
   var accuracyCircle = null;
   var focusId;
   var fitKey = '';
   map.createPane('doggo-user-location').style.zIndex = '650';
 
-  map.on('click', function(e){ post({type:'press', lat:e.latlng.lat, lng:e.latlng.lng}); });
+  var longPressEnabled = false, holdTimer = null, holdStart = null, suppressClickUntil = 0;
+  var pointers = new Set();
+  function cancelHold(){ clearTimeout(holdTimer); holdTimer=null; holdStart=null; }
+  function longPress(latlng){
+    if(!longPressEnabled || Date.now()<suppressClickUntil) return;
+    suppressClickUntil=Date.now()+900;
+    post({type:'longPress',lat:latlng.lat,lng:latlng.lng});
+  }
+  var container=document.getElementById('m');
+  container.addEventListener('pointerdown',function(e){
+    pointers.add(e.pointerId); cancelHold();
+    if(!longPressEnabled || pointers.size!==1 || e.button!==0) return;
+    holdStart={x:e.clientX,y:e.clientY};
+    var at=map.mouseEventToLatLng(e);
+    holdTimer=setTimeout(function(){holdTimer=null;longPress(at);},550);
+  });
+  container.addEventListener('pointermove',function(e){if(holdStart && Math.hypot(e.clientX-holdStart.x,e.clientY-holdStart.y)>10) cancelHold();});
+  ['pointerup','pointercancel','lostpointercapture'].forEach(function(name){window.addEventListener(name,function(e){pointers.delete(e.pointerId);cancelHold();});});
+  map.on('zoomstart dragstart',cancelHold);
+  map.on('unload',cancelHold);
+  map.on('contextmenu',function(e){cancelHold();longPress(e.latlng);});
+  map.on('click', function(e){ if(Date.now()>=suppressClickUntil) post({type:'press', lat:e.latlng.lat, lng:e.latlng.lng}); });
 
   window.__renderData = function(data){
+    longPressEnabled=!!data.longPressEnabled;
+    if(!longPressEnabled) cancelHold();
     layers.forEach(function(l){ map.removeLayer(l); });
     layers = [];
     var all = [];
@@ -105,7 +130,7 @@ window.addEventListener('unhandledrejection', function(){ post({type:'error'}); 
       layers.push(casing);
       var pl = L.polyline(pts, {color: seg.pending ? '${colors.warning}' : color, weight: selected ? 8 : 5, dashArray:seg.generated || seg.pending ? '8 8' : null}).addTo(map);
       layers.push(pl);
-      if(data.segmentEditable){ var hit=L.polyline(pts,{weight:44,opacity:0}).addTo(map); hit.on('click',function(e){L.DomEvent.stopPropagation(e);post({type:'segmentPress',index:index,lat:e.latlng.lat,lng:e.latlng.lng});});layers.push(hit); }
+      if(data.segmentEditable){ var hit=L.polyline(pts,{weight:44,opacity:0}).addTo(map); hit.on('click',function(e){L.DomEvent.stopPropagation(e);if(Date.now()>=suppressClickUntil) post({type:'segmentPress',index:index,lat:e.latlng.lat,lng:e.latlng.lng});});layers.push(hit); }
     });
     (data.markers || []).forEach(function(m){
       var selected = m.pointIndex !== undefined && m.pointIndex === data.selectedPointIndex;
@@ -117,7 +142,7 @@ window.addEventListener('unhandledrejection', function(){ post({type:'error'}); 
       pin.textContent = m.badge || '';
       var icon = L.divIcon({html: pin, iconSize:[size,size], iconAnchor:[size/2,size/2], className:''});
       var mk = L.marker([m.coordinate.latitude, m.coordinate.longitude], {icon: icon, title: m.label || '', zIndexOffset: selected ? 1000 : 0}).addTo(map);
-      mk.on('click', function(e){ L.DomEvent.stopPropagation(e); post({type:'markerPress', id: m.id}); });
+      mk.on('click', function(e){ L.DomEvent.stopPropagation(e); if(Date.now()>=suppressClickUntil) post({type:'markerPress', id: m.id}); });
       if (m.label) { var label = document.createElement('span'); label.textContent = m.label; mk.bindTooltip(label); }
       layers.push(mk);
     });
@@ -138,8 +163,13 @@ window.addEventListener('unhandledrejection', function(){ post({type:'error'}); 
     if(data.userCoordinate){
       var p=[data.userCoordinate.latitude,data.userCoordinate.longitude];
       var color=data.locationStale ? '${colors.muted}' : '${colors.location}';
-      if(!userMarker) userMarker=L.circleMarker(p,{pane:'doggo-user-location',radius:8,color:'${colors.surfaceSecondary}',weight:3,fillOpacity:1,interactive:false}).addTo(map);
-      userMarker.setLatLng(p).setStyle({fillColor:color});
+      // A DOM marker is repositioned on every fractional zoom event. An SVG circle
+      // inherits the renderer's scaling until zoomend and briefly changes size.
+      if(!userMarker){
+        userDot=document.createElement('div'); userDot.className='gps-dot';
+        userMarker=L.marker(p,{pane:'doggo-user-location',interactive:false,keyboard:false,icon:L.divIcon({html:userDot,iconSize:[22,22],iconAnchor:[11,11],className:''})}).addTo(map);
+      }
+      userMarker.setLatLng(p); userDot.style.backgroundColor=color;
       if(!accuracyCircle) accuracyCircle=L.circle(p,{weight:1,opacity:.2,fillOpacity:.09,interactive:false}).addTo(map);
       accuracyCircle.setLatLng(p).setRadius(data.userAccuracy || 0).setStyle({color:color,fillColor:color}).bringToBack();
     }else{

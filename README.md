@@ -142,6 +142,14 @@ Vous pouvez également créer un nouveau compte directement depuis l'écran de c
 - **Routage piéton et recalage GPS :** FOSSGIS / OSRM via le backend. `OSRM_ROUTING_BASE_URL` permet de configurer une instance compatible. Le fond de carte et le routage sont deux services distincts.
 - **GPS :** enregistrement au premier plan ; conservez Doggo ouvert pendant la balade.
 
+## Créer une balade
+
+1. **Tracer** : poser les grands points de passage sur la carte ou enregistrer sa marche au GPS. Le bouton « Nouveau segment ici » marque un changement de portion pendant la marche. Un appui long (550 ms) ouvre un repère d’intérêt ou de danger ; déplacer le doigt ou pincer annule cet appui. Fermer la boucle avant de continuer.
+2. **Affiner** : toucher une portion pour la découper et renseigner ses caractéristiques, intérêts, dangers et conseils. Toucher un point numéroté pour le supprimer ou le déplacer ; les portions voisines sont recalculées. Le départ reste fixe. Les retouches conservent les repères et les détails des segments.
+3. **Finaliser** : titre, description et informations générales, puis publication. A est l’itinéraire principal ; B, C… sont des boucles optionnelles partageant son départ. Elles peuvent être dessinées depuis zéro ou copiées puis retouchées. La fiche de balade permet de choisir une boucle et de consulter ses portions.
+
+Les variantes et leurs repères sont enregistrés dans la même balade. L’API vérifie toutes les boucles avant de créer le document. Les anciennes balades à itinéraire unique restent compatibles ; aucune migration ni dépendance supplémentaire n’est nécessaire. La durée saisie correspond à A.
+
 ## Authentification autonome
 
 L'inscription et la connexion par email/mot de passe sont gérées par l'API et MongoDB. Aucun service d'authentification externe n'est appelé. Les sessions existantes sont conservées jusqu'à leur expiration normale. Les comptes créés uniquement via l'ancien fournisseur Google n'ont pas de mot de passe local : leur accès par email nécessite un processus de récupération de compte, qui n'est pas encore implémenté. La connexion Google et l'ancien échange de session ont été retirés.

@@ -1,8 +1,9 @@
 import type { LatLng, SegmentInput } from './DoggoMap';
+import type { RouteNote, SegmentDetails } from './create/routeMetadata';
 export type Freedom = SegmentInput['freedom'];
 export type GpsSample = LatLng & { timestamp: number; accuracy: number };
-export type Leg = SegmentInput & { id?: string; source: 'draw' | 'gps' | 'return'; snapped?: boolean; sealed?: boolean; gpsSamples?: GpsSample[] };
-export type Draft = { start: LatLng | null; legs: Leg[]; rawGps?: GpsSample[] };
+export type Leg = SegmentInput & SegmentDetails & { id?: string; source: 'draw' | 'gps' | 'return'; snapped?: boolean; sealed?: boolean; gpsSamples?: GpsSample[] };
+export type Draft = { start: LatLng | null; legs: Leg[]; rawGps?: GpsSample[]; annotations?: RouteNote[] };
 let nextId = 0;
 const sessionId = Date.now().toString(36);
 export const legId = () => `leg-${sessionId}-${++nextId}`;
@@ -31,7 +32,7 @@ export function stats(d: Draft) {
 }
 export function addPoint(d: Draft, p: LatLng, freedom: Freedom, source: 'draw' | 'gps'): Draft {
   const last = lastPoint(d);
-  if (!last) return { start: p, legs: [] };
+  if (!last) return { ...d, start: p, legs: [] };
   if (meters(last, p) < 0.5) return d;
   const tail = d.legs.at(-1);
   // GPS samples merge within the current freedom segment. Manual taps remain undoable actions.
@@ -92,9 +93,13 @@ export function removeVertex(d: Draft, index: number): Draft {
   if (meters(from, to) < 0.5) throw new Error('Les points voisins sont confondus : supprimez plutôt le doublon.');
   const rebuilt = before.source === 'draw' && after.source === 'draw';
   const merged: Leg = rebuilt
-    ? { id: legId(), coordinates: [from, to], freedom: before.freedom, source: 'draw', snapped: false }
+    ? { ...before, id: legId(), coordinates: [from, to], source: 'draw', snapped: false }
     : { ...before, id: legId(), coordinates: [...before.coordinates, ...after.coordinates.slice(1)],
       gpsSamples: before.gpsSamples || after.gpsSamples ? [...(before.gpsSamples || []), ...(after.gpsSamples || [])] : undefined,
       snapped: !!(before.snapped && after.snapped), sealed: undefined };
+  merged.features = [...new Set([...(before.features || []), ...(after.features || [])])];
+  merged.interests = [...new Set([...(before.interests || []), ...(after.interests || [])])];
+  merged.dangers = [...new Set([...(before.dangers || []), ...(after.dangers || [])])];
+  merged.notes = [...new Set([before.notes, after.notes].filter(Boolean))].join('\n');
   return { ...d, legs: [...d.legs.slice(0, index - 1), merged, ...d.legs.slice(index + 1)] };
 }

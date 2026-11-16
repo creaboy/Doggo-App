@@ -39,9 +39,10 @@ export const DoggoMap: React.FC<MapProps> = (props) => {
     segments: props.segments?.map(({ coordinates, freedom, generated, pending }) => ({ coordinates, freedom, generated, pending })),
     markers: (props.markers || []).map(({ id, coordinate, color, label, badge, pointIndex }) => ({ id, coordinate, color, label, badge, pointIndex })),
     segmentEditable: !!props.onSegmentPress,
+    longPressEnabled: !!props.onLongPress,
     selectedSegmentIndex: props.selectedSegmentIndex, selectedPointIndex: props.selectedPointIndex,
     fitToRoute: props.fitToRoute, fitRevision: props.fitRevision,
-  }), [props.segments, props.markers, props.onSegmentPress, props.selectedSegmentIndex, props.selectedPointIndex, props.fitToRoute, props.fitRevision]);
+  }), [props.segments, props.markers, props.onSegmentPress, props.onLongPress, props.selectedSegmentIndex, props.selectedPointIndex, props.fitToRoute, props.fitRevision]);
   const payload = useMemo(() => ({ scene, basemap, userCoordinate: gps.coordinate, userAccuracy: gps.accuracy,
     locationStale: gps.status !== 'live', locationFocus: focus }), [scene, basemap, gps.coordinate, gps.accuracy, gps.status, focus]);
   const [attempt, setAttempt] = useState(0);
@@ -64,6 +65,7 @@ export const DoggoMap: React.FC<MapProps> = (props) => {
     const coordinate = typeof lat === 'number' && typeof lng === 'number' && Number.isFinite(lat) && Number.isFinite(lng)
       && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 ? { latitude: lat, longitude: lng } : undefined;
     if (message.type === 'press' && coordinate) props.onPress?.(coordinate);
+    if (message.type === 'longPress' && coordinate) props.onLongPress?.(coordinate);
     if (message.type === 'segmentPress' && coordinate && Number.isInteger(message.index) && message.index! >= 0 && message.index! < (props.segments?.length || 0)) props.onSegmentPress?.(message.index!, coordinate);
     if (message.type === 'markerPress') props.markers?.find(marker => marker.id === message.id)?.onPress?.();
   };

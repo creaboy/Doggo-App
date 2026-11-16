@@ -1,13 +1,15 @@
 import { useRef, useState } from 'react';
 import { api } from './api';
 import type { LatLng } from './DoggoMap';
-import { addPoint, closed, Draft, emptyDraft, Freedom, rawGapToStart, removeVertex, usable, withinClosingDistance } from './routeDraft';
+import { addPoint, closed, Draft, emptyDraft, Freedom, meters, rawGapToStart, removeVertex, usable, withinClosingDistance } from './routeDraft';
 import type { DraftSelection } from './create/selection';
 import { completeLoop, requestPath, snapDraft } from './routeCompletion';
 import { useRouteRecorder } from './useRouteRecorder';
 import { useGpsSnapping } from './useGpsSnapping';
 import { addGpsSample, restoreFinalGpsPosition } from './gpsDraft';
-import { splitLeg } from './segmentEditing';
+import { splitLeg, moveVertex } from './segmentEditing';
+import { serializeNotes, serializeSegments, serializeVariant } from './create/routeMetadata';
+import type { RouteNote, SegmentDetails, RouteVariant } from './create/routeMetadata';
 
 export function useWalkCreation() {
   const [draft, setDraft] = useState<Draft>(emptyDraft);
@@ -30,9 +32,9 @@ export function useWalkCreation() {
   const gps = useGpsSnapping(recorder.recording, () => current.current, commit);
   const locked = !!busy || gps.busy || recorder.recording || recorder.starting;
   const run = async (label: string, job: () => Promise<void>) => {
-    if (working.current) { setNotice('Patientez : le calcul en cours doit se terminer.'); return; }
+    if (working.current) { setNotice('Patientez : le calcul en cours doit se terminer.'); return false; }
     working.current = true; setBusy(label); setError(''); setNotice('');
-    try { await job(); } catch (e: any) { setError(e.message || 'Impossible de terminer. Votre tracé est conservé.'); }
+    try { await job(); return true; } catch (e: any) { setError(e.message || 'Impossible de terminer. Votre tracé est conservé.'); return false; }
     finally { working.current = false; setBusy(''); }
   };
   const tap = (point: LatLng) => {
@@ -93,18 +95,18 @@ export function useWalkCreation() {
     if (!withinClosingDistance(rawGapToStart(saved))) { setFinishOpen(true); return; }
     void run('Fermeture du dernier petit écart…', async () => {
       await gps.flush();
-      commit(await completeLoop(restoreFinalGpsPosition(current.current)), true); setNotice('Boucle terminée'); setSelection(null); setPreview(true);
+      commit(await completeLoop(restoreFinalGpsPosition(current.current)), true); setNotice('Boucle terminée · passez aux retouches'); setSelection(null);
     });
   };
   const continueRecording = () => { if (working.current) return; setFinishOpen(false); setError(''); start(); };
   const finishReturn = () => run('Calcul du retour piéton…', async () => {
     await gps.flush();
     commit(await completeLoop(restoreFinalGpsPosition(current.current)), true);
-    setFinishOpen(false); setNotice('Boucle terminée · retour ajouté à vérifier'); setSelection(null); setPreview(true);
+    setFinishOpen(false); setNotice('Boucle terminée · retour ajouté à vérifier'); setSelection(null);
   });
-  const showPreview = () => run('Préparation de l’aperçu…', async () => {
+  const showPreview = () => run('Vérification de la boucle…', async () => {
     if (!usable(current.current)) throw new Error('Le parcours est trop court pour être publié.');
-    if (!closed(current.current)) throw new Error('Fermez la boucle avant de consulter l’aperçu et publier.');
+    if (!closed(current.current)) throw new Error('Rejoignez le départ pour fermer la boucle avant de passer à l’étape suivante.');
     await gps.flush();
     const final = await snapDraft(current.current);
     if (!closed(final)) throw new Error('La boucle doit rejoindre exactement son point de départ.');
@@ -113,6 +115,29 @@ export function useWalkCreation() {
   const updateFreedom = (index: number, value: Freedom) => {
     if (working.current || gps.busy) return;
     commit({ ...current.current, legs: current.current.legs.map((leg, i) => i === index ? { ...leg, freedom: value } : leg) }, !recorder.recording);
+  };
+  const updateDetails = (index: number, details: SegmentDetails) => {
+    if (locked || working.current) return;
+    commit({ ...current.current, legs: current.current.legs.map((leg, i) => i === index ? { ...leg, ...details } : leg) }, true);
+  };
+  const saveAnnotation = (note: RouteNote) => {
+    if (working.current) return;
+    const annotations = current.current.annotations || [];
+    commit({ ...current.current, annotations: [...annotations.filter(n => n.id !== note.id), note] }, !recorder.recording);
+  };
+  const removeAnnotation = (id: string) => {
+    if (working.current) return;
+    commit({ ...current.current, annotations: (current.current.annotations || []).filter(n => n.id !== id) }, !recorder.recording);
+  };
+  const replaceDraft = (next: Draft) => {
+    if (locked || working.current) return;
+    gps.cancel(); recorder.reset(); history.current = []; commit(next); setSelection(null); setPreview(false); setError(''); setNotice('');
+  };
+  const markSegment = () => {
+    const legs = current.current.legs;
+    if (!recorder.recording || !legs.length) return;
+    commit({ ...current.current, legs: legs.map((l, i) => i === legs.length - 1 ? { ...l, sealed: true } : l) });
+    setNotice('Repère posé · les prochains pas formeront un nouveau segment');
   };
   const selectSegment = (index: number, point?: LatLng) => { setSelection({ kind: 'segment', index, point: point || null }); setError(''); setNotice(''); };
   const selectPoint = (index: number) => { setSelection({ kind: 'point', index }); setError(''); setNotice(''); };
@@ -138,18 +163,29 @@ export function useWalkCreation() {
     try { commit(splitLeg(current.current, selection.index, selection.point), true); setSelection(null); setNotice('Segment divisé : chaque portion peut maintenant avoir sa propre règle.'); setError(''); }
     catch (e: any) { setError(e.message); }
   };
-  const publish = async (details: object) => {
-    if (working.current || gps.busy || !preview || recorder.recording || recorder.starting || !closed(current.current) || !usable(current.current) || current.current.legs.some(l => !l.snapped)) throw new Error('Vérifiez une boucle entièrement ajustée avant de publier.');
+  const movePoint = (point: LatLng) => {
+    if (selection?.kind !== 'point' || locked || working.current) return;
+    const index = selection.index;
+    return run('Recalcul des portions voisines…', async () => {
+      const next = await snapDraft(moveVertex(current.current, index, point));
+      commit(next, true); setSelection(null); setNotice('Point déplacé · les deux portions suivent les chemins');
+    });
+  };
+  const publish = async (details: object, variants?: RouteVariant[]) => {
+    const routes = variants || [{ name: 'A', draft: current.current }];
+    if (working.current || gps.busy || !preview || recorder.recording || recorder.starting || routes.some(v => !closed(v.draft) || !usable(v.draft) || v.draft.legs.some(l => !l.snapped))) throw new Error('Chaque itinéraire doit former une boucle entièrement ajustée avant publication.');
+    const main = routes[0].draft;
+    if (routes.some(v => meters(main.start!, v.draft.start!) > .01)) throw new Error('Tous les itinéraires doivent partager le départ de A. Corrigez le tracé de la variante concernée.');
     working.current = true; setBusy('Publication…'); setError('');
     try {
       return await api('/walks', { method: 'POST', body: JSON.stringify({ ...details,
-        segments: current.current.legs.map(s => ({ freedom: s.freedom, coordinates: s.coordinates.map(p => [p.latitude, p.longitude]) })),
-        features: [], pois: [], hazards: [],
+        segments: serializeSegments(main.legs),
+        features: [...new Set(main.legs.flatMap(s => s.features || []))], ...serializeNotes(main.annotations),
+        variants: routes.slice(1).map(serializeVariant),
       }) });
     } finally { working.current = false; setBusy(''); }
   };
-  const canUndoInPreview = !!history.current.length && closed(history.current.at(-1)!);
-  return { draft, mode, setMode, freedom, setFreedom, preview, setPreview, gps, selection, selectSegment, selectPoint, removePoint, setSelection, splitSelected, canUndoInPreview,
+  return { draft, mode, setMode, freedom, setFreedom, preview, setPreview, gps, selection, selectSegment, selectPoint, removePoint, setSelection, splitSelected,
     finishOpen, error, setError, notice, busy, locked, recorder, tap, undo, clear, closeManual, snap,
-    start, stop, continueRecording, finishReturn, showPreview, updateFreedom, publish };
+    start, stop, continueRecording, finishReturn, showPreview, updateFreedom, updateDetails, saveAnnotation, removeAnnotation, replaceDraft, markSegment, movePoint, publish };
 }

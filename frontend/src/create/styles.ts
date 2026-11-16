@@ -4,6 +4,10 @@ export const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   header: { backgroundColor: colors.surfaceSecondary, borderBottomWidth: 1, borderBottomColor: colors.border, paddingHorizontal: spacing.lg, paddingBottom: spacing.md, gap: spacing.md },
   title: { fontSize: 24, fontWeight: '700', color: colors.onSurface },
+  intro: { padding: spacing.lg, gap: spacing.sm },
+  step: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 44, borderRadius: radius.md, backgroundColor: colors.surfaceTertiary },
+  stepCurrent: { backgroundColor: colors.brandPrimary },
+  stepNumber: { color: colors.muted, fontWeight: '800', fontSize: 16 },
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, alignItems: 'center' },
   mode: { flex: 1, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: radius.md, backgroundColor: colors.surfaceTertiary },
   active: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
@@ -27,5 +31,4 @@ export const styles = StyleSheet.create({
   number: { color: colors.onSurface, fontSize: 17, fontWeight: '700' },
   overlay: { flex: 1, backgroundColor: colors.surfaceInverse, justifyContent: 'center', padding: spacing.lg },
   dialog: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.xl, gap: spacing.lg, maxHeight: '90%' },
-  previewHeader: { paddingHorizontal: spacing.lg, paddingBottom: spacing.md, gap: spacing.sm },
 });

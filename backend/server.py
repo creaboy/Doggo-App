@@ -11,7 +11,7 @@ import uuid
 import hashlib
 import secrets
 from datetime import datetime, timezone, timedelta
-from route_geometry import validate_loop
+from route_geometry import validate_loop, meters
 from walking_routing import snap_points, match_points
 
 ROOT_DIR = Path(__file__).parent
@@ -35,6 +35,33 @@ logger = logging.getLogger(__name__)
 class RouteSegment(BaseModel):
     coordinates: List[List[float]]  # [[lat, lng], ...]
     freedom: Literal["free", "caution", "leash"] = "free"
+    features: List[Literal["shade", "water", "swimming", "parking", "low_traffic", "easy_path", "quiet"]] = Field(default_factory=list)
+    interests: List[Literal["water", "swimming", "parking", "viewpoint", "trash", "other"]] = Field(default_factory=list)
+    dangers: List[Literal["cars", "crossing", "caterpillars", "boars", "livestock", "aggressive_dogs", "toxic", "hunting", "path_closed", "dogs_prohibited", "other"]] = Field(default_factory=list)
+    notes: str = Field(default="", max_length=3000)
+
+
+class PoiInput(BaseModel):
+    type: Literal["water", "swimming", "parking", "viewpoint", "trash", "other"]
+    lat: float = Field(ge=-90, le=90)
+    lng: float = Field(ge=-180, le=180)
+    description: str = Field(default="", max_length=3000)
+
+
+class HazardInput(PoiInput):
+    type: Literal["cars", "crossing", "caterpillars", "boars", "livestock", "aggressive_dogs", "toxic", "hunting", "path_closed", "dogs_prohibited", "other"]
+
+
+class VariantCreate(BaseModel):
+    name: str = Field(pattern=r"^[B-Z]$")
+    segments: List[RouteSegment]
+    pois: List[PoiInput] = Field(default_factory=list, max_length=200)
+    hazards: List[HazardInput] = Field(default_factory=list, max_length=200)
+
+
+class RouteVariant(VariantCreate):
+    distance_km: float
+    off_leash_pct: int
 
 
 class PointOfInterest(BaseModel):
@@ -80,6 +107,7 @@ class Walk(BaseModel):
     dog_freedom: Literal["free", "partial", "leash"] = "free"
     off_leash_pct: int = 0
     segments: List[RouteSegment] = []
+    variants: List[RouteVariant] = Field(default_factory=list)
     features: List[str] = []  # shade, water, swimming, parking, low_traffic, easy_path, quiet
     rating_avg: float = 0.0
     rating_count: int = 0
@@ -98,8 +126,9 @@ class WalkCreate(BaseModel):
     duration_min: int
     segments: List[RouteSegment]
     features: List[str] = []
-    pois: List[dict] = []
-    hazards: List[dict] = []
+    pois: List[PoiInput] = Field(default_factory=list, max_length=200)
+    hazards: List[HazardInput] = Field(default_factory=list, max_length=200)
+    variants: List[VariantCreate] = Field(default_factory=list, max_length=25)
 
 
 class Rating(BaseModel):
@@ -337,6 +366,14 @@ async def create_walk(inp: WalkCreate, user=Depends(current_user)):
         raise HTTPException(422, "Un titre et une durée positive sont requis.")
     try:
         validate_loop(inp.segments)
+        names = set()
+        for variant in inp.variants:
+            validate_loop(variant.segments)
+            if variant.name in names:
+                raise ValueError("Chaque variante doit avoir une lettre différente.")
+            names.add(variant.name)
+            if meters(inp.segments[0].coordinates[0], variant.segments[0].coordinates[0]) > 0.01:
+                raise ValueError("Les variantes doivent partir du même point que l’itinéraire A.")
     except ValueError as exc:
         raise HTTPException(422, str(exc))
     distance = _compute_distance(inp.segments)
@@ -354,6 +391,8 @@ async def create_walk(inp: WalkCreate, user=Depends(current_user)):
         dog_freedom=inp.dog_freedom,
         off_leash_pct=off_leash,
         segments=inp.segments,
+        variants=[RouteVariant(**v.model_dump(), distance_km=_compute_distance(v.segments),
+                               off_leash_pct=_compute_off_leash_pct(v.segments)) for v in inp.variants],
         features=inp.features,
         created_by=user["user_id"],
         creator_name=user["username"],
@@ -362,12 +401,10 @@ async def create_walk(inp: WalkCreate, user=Depends(current_user)):
     await db.walks.insert_one(d)
     # insert POIs / hazards
     for p in inp.pois:
-        poi = PointOfInterest(walk_id=walk.id, type=p["type"], lat=p["lat"], lng=p["lng"],
-                              description=p.get("description", ""), created_by=user["user_id"])
+        poi = PointOfInterest(walk_id=walk.id, **p.model_dump(), created_by=user["user_id"])
         await db.pois.insert_one(poi.model_dump())
     for hz in inp.hazards:
-        h = Hazard(walk_id=walk.id, type=hz["type"], lat=hz["lat"], lng=hz["lng"],
-                   description=hz.get("description", ""), created_by=user["user_id"],
+        h = Hazard(walk_id=walk.id, **hz.model_dump(), created_by=user["user_id"],
                    creator_name=user["username"])
         await db.hazards.insert_one(h.model_dump())
     return clean(d)

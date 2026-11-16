@@ -8,6 +8,7 @@ import { colors, radius, spacing } from "../../src/theme";
 import { DoggoMap, SegmentInput } from "../../src/DoggoMap";
 import { api } from "../../src/api";
 import { regionFor } from "../../src/routeDraft";
+import { featureOptions, interestOptions, dangerOptions } from '../../src/create/routeMetadata';
 import { useAuth } from "../../src/AuthContext";
 import { useFavorites } from "../../src/FavoritesContext";
 import { environmentLabels, difficultyLabels, freedomLabels, formatDuration, timeAgo, poiTypeLabels, hazardTypeLabels, walkFreedomColor } from "../../src/labels";
@@ -26,6 +27,8 @@ export default function WalkDetail() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [hazardOpen, setHazardOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [variantName, setVariantName] = useState('A');
+  const [selectedSegment, setSelectedSegment] = useState<number | null>(null);
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -45,9 +48,13 @@ export default function WalkDetail() {
   if (loading) return <View style={styles.center}><ActivityIndicator size="large" color={colors.brandPrimary} /></View>;
   if (err || !data) return <View style={styles.center}><Text style={styles.err}>{err || "Not found"}</Text></View>;
 
-  const { walk, pois, hazards, comments, confirmations_30d } = data;
+  const { walk, comments, confirmations_30d } = data;
+  const variant = walk.variants?.find((v: any) => v.name === variantName);
+  const route = variant || walk;
+  const pois = variant ? variant.pois.map((p: any, i: number) => ({ ...p, id: `variant-poi-${i}` })) : data.pois;
+  const hazards = variant ? variant.hazards : data.hazards;
 
-  const segments: SegmentInput[] = walk.segments.map((s: any) => ({
+  const segments: SegmentInput[] = route.segments.map((s: any) => ({
     freedom: s.freedom,
     coordinates: s.coordinates.map((c: number[]) => ({ latitude: c[0], longitude: c[1] })),
   }));
@@ -58,7 +65,7 @@ export default function WalkDetail() {
   const markers = [
     { id: "start", coordinate: { latitude: walk.start_lat, longitude: walk.start_lng }, color: colors.brandPrimary, label: "Départ de la balade" },
     ...pois.map((p: any) => ({ id: p.id, coordinate: { latitude: p.lat, longitude: p.lng }, color: colors.brandSecondary, label: poiTypeLabels[p.type] })),
-    ...hazards.map((h: any) => ({ id: h.id, coordinate: { latitude: h.lat, longitude: h.lng }, color: colors.error, label: hazardTypeLabels[h.type] })),
+    ...hazards.map((h: any, i: number) => ({ id: h.id || `variant-hazard-${i}`, coordinate: { latitude: h.lat, longitude: h.lng }, color: colors.error, label: hazardTypeLabels[h.type] })),
   ];
 
   const rate = async (stars: number) => {
@@ -156,16 +163,30 @@ export default function WalkDetail() {
 
           <View style={styles.statsGrid}>
             <StatBox icon={<Clock size={18} color={colors.brandPrimary} />} label="Duration" value={formatDuration(walk.duration_min)} />
-            <StatBox icon={<TrendUp size={18} color={colors.brandPrimary} />} label="Distance" value={`${walk.distance_km} km`} />
-            <StatBox icon={<View style={[styles.stripe, { backgroundColor: walkFreedomColor[walk.dog_freedom] }]} />} label={freedomLabels[walk.dog_freedom]} value={`${walk.off_leash_pct}% free`} />
+            <StatBox icon={<TrendUp size={18} color={colors.brandPrimary} />} label="Distance" value={`${route.distance_km} km`} />
+            <StatBox icon={<View style={[styles.stripe, { backgroundColor: walkFreedomColor[walk.dog_freedom] }]} />} label={freedomLabels[walk.dog_freedom]} value={`${route.off_leash_pct}% free`} />
           </View>
         </View>
 
+        {!!walk.variants?.length && <View style={[styles.section, { gap: 8 }]}><Text style={styles.hazardTitle}>Choisir une boucle</Text><View style={styles.metaRow}>
+          {[{ name: 'A', distance_km: walk.distance_km }, ...walk.variants].map((v: any) => <Pressable key={v.name} testID={`view-variant-${v.name}`} style={[styles.outlineBtn, variantName === v.name && { backgroundColor: colors.surfaceTertiary }]}
+            onPress={() => { setVariantName(v.name); setSelectedSegment(null); }}><Text style={styles.outlineBtnText}>{v.name} · {v.distance_km} km</Text></Pressable>)}
+        </View><Text style={styles.metaSmall}>Durée indiquée pour l’itinéraire A.</Text></View>}
         <View style={styles.mapWrap}>
-          <DoggoMap testID="walk-detail-map" initialRegion={region} segments={segments} markers={markers} fitToRoute style={{ flex: 1 }} />
+          <DoggoMap testID="walk-detail-map" initialRegion={region} segments={segments} markers={markers} fitToRoute fitRevision={variantName.charCodeAt(0)}
+            onSegmentPress={index => setSelectedSegment(index)} selectedSegmentIndex={selectedSegment ?? undefined} style={{ flex: 1 }} />
         </View>
 
         <LegendRow />
+        {selectedSegment !== null && <View style={[styles.section, { gap: 8 }]} testID="segment-details">
+          <Text style={styles.hazardTitle}>Segment {selectedSegment + 1}</Text>
+          <Text style={styles.desc}>{[
+            ...(route.segments[selectedSegment]?.features || []).map((key: string) => featureOptions[key]),
+            ...(route.segments[selectedSegment]?.interests || []).map((key: string) => interestOptions[key]),
+            ...(route.segments[selectedSegment]?.dangers || []).map((key: string) => dangerOptions[key]),
+          ].join(' · ') || 'Aucun détail supplémentaire.'}</Text>
+          {!!route.segments[selectedSegment]?.notes && <Text style={styles.desc}>{route.segments[selectedSegment].notes}</Text>}
+        </View>}
 
         <View style={styles.section}>
           <View style={styles.confirmCard} testID="confirm-card">
@@ -190,15 +211,15 @@ export default function WalkDetail() {
 
         <SectionHeader title={`Hazards (${hazards.length})`} action={{ label: "+ Add", onPress: () => user ? setHazardOpen(true) : router.push("/auth/login"), testID: "add-hazard" }} />
         <View style={styles.list}>
-          {hazards.length === 0 ? <Text style={styles.emptyText}>No hazards reported.</Text> : hazards.map((h: any) => (
-            <View key={h.id} style={styles.hazardRow} testID={`hazard-${h.id}`}>
+          {hazards.length === 0 ? <Text style={styles.emptyText}>No hazards reported.</Text> : hazards.map((h: any, i: number) => (
+            <View key={h.id || i} style={styles.hazardRow} testID={`hazard-${h.id || i}`}>
               <View style={[styles.iconBox, { backgroundColor: h.status === "resolved" ? colors.surfaceTertiary : "#FEE2E2" }]}>
                 <Warning size={18} color={h.status === "resolved" ? colors.muted : colors.error} weight="fill" />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.hazardTitle}>{hazardTypeLabels[h.type]}{h.status === "resolved" ? " · resolved" : ""}</Text>
                 {!!h.description && <Text style={styles.hazardDesc}>{h.description}</Text>}
-                <Text style={styles.metaSmall}>Confirmed {timeAgo(h.last_confirmed_at)} · {h.confirmations} confirmations</Text>
+                {!variant && <Text style={styles.metaSmall}>Confirmed {timeAgo(h.last_confirmed_at)} · {h.confirmations} confirmations</Text>}
               </View>
               {h.status === "active" && (
                 <View style={{ gap: 4 }}>

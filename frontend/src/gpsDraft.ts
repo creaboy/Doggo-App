@@ -3,7 +3,7 @@ import { Draft, GpsSample, Freedom, lastPoint, legId, meters } from './routeDraf
 
 export function addGpsSample(d: Draft, sample: GpsSample, freedom: Freedom): Draft {
   const rawGps = [...(d.rawGps || []), sample];
-  if (!d.start) return { start: { latitude: sample.latitude, longitude: sample.longitude }, legs: [], rawGps };
+  if (!d.start) return { ...d, start: { latitude: sample.latitude, longitude: sample.longitude }, legs: [], rawGps };
   const last = lastPoint(d)!;
   const tail = d.legs.at(-1);
   const point = { latitude: sample.latitude, longitude: sample.longitude };

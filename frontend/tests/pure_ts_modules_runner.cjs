@@ -487,6 +487,36 @@ test('adding a point on a segment inserts it in order and renumbers the followin
   assert.equal(draft.legs.length, 3);
 });
 
+test('segment metadata and annotations survive splitting, merging, moving and serialization of independent variants', () => {
+  const { routeDraft, segmentEditing } = loadCore();
+  const metadata = makeLoader().load(path.join(__dirname, '../src/create/routeMetadata.ts'));
+  const start = { latitude: 48.85, longitude: 2.35 };
+  const middle = offsetMeters(start, 80, 0), end = offsetMeters(start, 80, 80);
+  const note = { id: 'n', kind: 'hazard', type: 'path_closed', coordinate: middle, description: 'Barrière' };
+  const draft = { start, annotations: [note], legs: [
+    { id: 'a', source: 'draw', freedom: 'free', snapped: true, coordinates: [start, middle], features: ['shade'], dangers: ['cars'], notes: 'Ombre' },
+    { id: 'b', source: 'draw', freedom: 'leash', snapped: true, coordinates: [middle, end], interests: ['water'], notes: 'Eau' },
+    { id: 'c', source: 'draw', freedom: 'free', snapped: true, coordinates: [end, start] },
+  ] };
+  const split = segmentEditing.splitLeg(draft, 0, offsetMeters(start, 40, 0));
+  assert.deepEqual(split.legs[1].features, ['shade']);
+  assert.deepEqual(split.annotations, [note]);
+  const merged = routeDraft.removeVertex(draft, 1);
+  assert.deepEqual(merged.legs[0].features, ['shade']);
+  assert.deepEqual(merged.legs[0].interests, ['water']);
+  assert.equal(merged.legs[0].notes, 'Ombre\nEau');
+  const moved = segmentEditing.moveVertex(draft, 1, offsetMeters(start, 100, 10));
+  assert.deepEqual(moved.legs[0].coordinates.at(-1), moved.legs[1].coordinates[0]);
+  assert.equal(moved.legs[0].snapped, false);
+  assert.equal(routeDraft.closed(moved), true);
+  assert.deepEqual(draft.legs[0].coordinates.at(-1), middle, 'editing a copy cannot mutate route A');
+  assert.throws(() => segmentEditing.moveVertex(draft, 0, middle));
+  const payload = metadata.serializeVariant({ name: 'B', draft: moved });
+  assert.equal(payload.name, 'B');
+  assert.equal(payload.hazards[0].description, 'Barrière');
+  assert.deepEqual(payload.segments[0].dangers, ['cars']);
+});
+
 async function run() {
   let passed = 0;
   const failures = [];

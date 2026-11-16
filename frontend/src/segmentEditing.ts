@@ -25,3 +25,15 @@ export function splitLeg(d: Draft, index: number, at: LatLng): Draft {
   const parts = [left, right].map(coordinates => ({ ...leg, id: legId(), gpsSamples: undefined, coordinates }));
   return { ...d, legs: [...d.legs.slice(0, index), ...parts, ...d.legs.slice(index + 1)] };
 }
+
+// Returns a pending draft; commit only after both adjacent paths have been routed.
+export function moveVertex(d: Draft, index: number, at: LatLng): Draft {
+  if (index <= 0 || index >= d.legs.length) throw new Error('Choisissez un point intermédiaire. Le départ reste fixe.');
+  const legs = d.legs.map((leg, i) => {
+    if (i !== index - 1 && i !== index) return leg;
+    const coordinates = i === index - 1 ? [leg.coordinates[0], at] : [at, leg.coordinates.at(-1)!];
+    if (meters(coordinates[0], coordinates[1]) < 3) throw new Error('Gardez au moins 3 m entre les points.');
+    return { ...leg, id: legId(), coordinates, source: 'draw' as const, snapped: false, generated: false, gpsSamples: undefined };
+  });
+  return { ...d, legs };
+}

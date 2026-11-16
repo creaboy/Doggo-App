@@ -6,9 +6,10 @@ import { Draft, draftPoints, meters } from '../routeDraft';
 import type { PointSelection } from './selection';
 import { styles } from './styles';
 
-export function PointEditor({ draft, selection, prefix, disabled, onRemove, onClose }: {
+export function PointEditor({ draft, selection, prefix, disabled, onRemove, onClose, onMove }: {
   draft: Draft; selection: PointSelection | null; prefix: string; disabled: boolean;
   onRemove: () => void; onClose: () => void;
+  onMove?: () => void;
 }) {
   if (!selection) return null;
   const points = draftPoints(draft);
@@ -34,6 +35,7 @@ export function PointEditor({ draft, selection, prefix, disabled, onRemove, onCl
         ? `Segment reconstruit entre le point ${previous.index + 1} et le point ${next.index + 1} : environ ${rebuiltLength} m à vol d’oiseau avant ajustement.`
         : 'Ce point termine le tracé : le dernier segment en trop est retiré.'}
     </Text>}
+    {onMove && !point.start && <Pressable testID={`${prefix}-move-point`} disabled={disabled} onPress={onMove} style={styles.small}><Text style={styles.text}>Déplacer ce point sur la carte</Text></Pressable>}
     <Pressable testID={`${prefix}-remove-point`} disabled={!canRemove} onPress={onRemove}
       style={({ pressed }) => [styles.small, (!canRemove || pressed) && styles.disabled]}>
       <Trash size={16} color={canRemove ? colors.error : colors.muted} />

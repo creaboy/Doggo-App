@@ -25,12 +25,14 @@ function startMap(native = false, apiKey = 'test-key') {
   if (saved === undefined) delete process.env.EXPO_PUBLIC_CARTO_API_KEY;
   else process.env.EXPO_PUBLIC_CARTO_API_KEY = saved;
   const messages = [], layers = [], fits = [], views = [], removed = [], listeners = {};
-  const canvas = { attributes: {}, setAttribute(k, v) { this.attributes[k] = v; } };
+  const timers = new Map(); let timerId = 0;
+  const canvas = { attributes: {}, events: {}, setAttribute(k, v) { this.attributes[k] = v; }, addEventListener(k, cb) { this.events[k] = cb; } };
   const map = {
     zoom: 12, getZoom() { return this.zoom; },
     setView(p, zoom) { views.push({ p, zoom }); return this; },
     createPane() { return { style: {} }; }, on(event, cb) { listeners[event] = cb; },
     fire(event, data) { listeners[event]?.({ type: event, ...data }); },
+    mouseEventToLatLng(e) { return { lat: e.clientY, lng: e.clientX }; },
     removeLayer(layer) { removed.push(layer); }, fitBounds(bounds) { fits.push(bounds); }, invalidateSize() {},
   };
   function layer(kind, points, options) {
@@ -63,11 +65,11 @@ function startMap(native = false, apiKey = 'test-key') {
     divIcon: opts => opts, latLngBounds: pts => pts, DomEvent: { stopPropagation() {} },
   };
   window.L = L;
-  const context = vm.createContext({ window, L, document: { getElementById: () => canvas,
+  const context = vm.createContext({ window, L, setTimeout(cb) { timers.set(++timerId, cb); return timerId; }, clearTimeout(id) { timers.delete(id); }, document: { getElementById: () => canvas,
     createElement: () => ({ style: {}, textContent: '' }) } });
   // Execute the exact inline scripts shipped to both iframe and WebView.
   for (const match of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) vm.runInContext(match[1], context);
-  return { window, messages, layers, fits, views, removed, listeners, canvas, map };
+  return { window, messages, layers, fits, views, removed, listeners, canvas, map, timers };
 }
 
 const scene = () => ({ revision: 1, segmentEditable: true, fitToRoute: true, fitRevision: 1,
@@ -114,7 +116,7 @@ for (const native of [false, true]) {
   assert.equal(m.messages.at(-1).type, 'press');
   m.window.__doggoUpdate({ scene: { ...data.scene, revision: 2, selectedPointIndex: undefined } });
   assert.equal(m.fits.length, 1, 'editing must not recenter the camera');
-  assert.ok(m.removed.some(l => l.kind === 'user'), 'missing GPS clears its marker');
+  assert.ok(m.removed.some(l => l.kind === 'marker' && l.options.pane === 'doggo-user-location'), 'missing GPS clears its marker');
   m.window.__doggoUpdate({ scene: { ...data.scene, revision: 3, fitRevision: 2 } });
   assert.equal(m.fits.length, 2);
   const count = m.messages.length;
@@ -158,5 +160,31 @@ assert.equal(missingKey.canvas.attributes['data-basemap'], 'liberty', 'keep the 
 assert.equal(missingKey.removed.includes(liberty), false);
 assert.match(missingKey.messages.at(-1).message, /CARTO/);
 console.log('PASS: default Liberty needs no key; unavailable Voyager preserves the existing map and overlays');
+
+const held = startMap();
+held.window.__doggoUpdate({ scene: { ...scene(), longPressEnabled: true } });
+held.canvas.events.pointerdown({ pointerId: 1, button: 0, clientX: 2.35, clientY: 48.85 });
+assert.equal(held.timers.size, 1);
+held.canvas.events.pointermove({ clientX: 30, clientY: 48.85 });
+assert.equal(held.timers.size, 0, 'panning cancels a long press');
+held.canvas.events.pointerdown({ pointerId: 2, button: 0, clientX: 2.35, clientY: 48.85 });
+assert.equal(held.timers.size, 0, 'a pinch never creates a report');
+held.listeners.pointerup({ pointerId: 1 }); held.listeners.pointerup({ pointerId: 2 });
+held.canvas.events.pointerdown({ pointerId: 3, button: 0, clientX: 2.35, clientY: 48.85 });
+[...held.timers.values()][0]();
+assert.equal(held.messages.at(-1).type, 'longPress');
+const countAfterHold = held.messages.length;
+held.listeners.click({ latlng: { lat: 48.85, lng: 2.35 } });
+held.layers.find(l => l.kind === 'line' && l.options.opacity === 0).events.click({ latlng: { lat: 48.85, lng: 2.35 } });
+assert.equal(held.messages.length, countAfterHold, 'long press must not add a route point or select a segment');
+console.log('PASS: long press reports, pan/pinch cancellation and suppressed release clicks');
+
+const location = startMap();
+location.window.__doggoUpdate({ scene: scene(), userCoordinate: { latitude: 48.85, longitude: 2.35 } });
+const dot = location.layers.find(l => l.options.pane === 'doggo-user-location');
+assert.equal(dot.kind, 'marker', 'GPS uses a DOM marker rather than a scaled SVG path');
+assert.deepEqual(Array.from(dot.options.icon.iconSize), [22, 22]);
+assert.equal(dot.options.interactive, false);
+console.log('PASS: GPS marker has a constant pixel size independent of SVG zoom scaling');
 
 require('./pinch_zoom_runner.cjs');
