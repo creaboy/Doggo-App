@@ -12,7 +12,7 @@ export const hazardIcons = {
   cars: 'M4 11l2-6h12l2 6M3 18V11h18v7H3Zm2 0v3m14-3v3M6 14h2m8 0h2',
   crossing: 'M9 3h6m-7 5h8M6 13h12M4 18h16',
   caterpillars: 'M3 17a3 3 0 0 1 6 0m0 0a3 3 0 0 1 6 0m0 0v-6a3 3 0 1 1 6 0v5c0 3-2 4-5 4H6c-2 0-3-1-3-3ZM16 8l-2-3m6 3 2-3',
-  boars: 'M3 10 5 5l5 4h5l5-4 2 5-3 3-1 6H6l-1-6-2-3ZM8 16h8v5H8Zm3 2h.1m2 0h.1',
+  boars: 'M1 11l4-1 3-4 1-4 3 3 2-3 1 3 2-3 1 3c3 1 5 4 5 8v6l-5 3H9l-2-4-3-2H1Zm9-2a1 1 0 1 0 0 2 1 1 0 0 0 0-2Zm-6 5 2 1c1 0 2-1 2-3 1 3 0 5-2 5l-2-1Z M2 17h2c1 0 2-1 2-2 1 2 0 4-2 4H2Z',
   livestock: 'M6 9C2 9 2 6 2 4l5 3h10l5-3c0 2 0 5-4 5M6 8v8l3 4h6l3-4V8M9 12h.1m6 0h.1M9 17h6',
   aggressive_dogs: 'M7 22c2-3 2-5 0-6l-3 2-2-2 3-1 1-3-2 1v-2l-2 1v-2L1 9V7l3-1 4 1 3-3 4 1 5-3-1 6 1 4 3 5-6 5H7Zm3-14 3 1-1-2Z',
   toxic: 'M4 10a8 8 0 1 1 16 0c0 3-2 5-4 6v5H8v-5c-2-1-4-3-4-6Zm4 0h1m6 0h1m-4 4v1m-1 4v2m2-2v2',
@@ -24,7 +24,7 @@ export const hazardIcons = {
 
 export const pawPath = 'M12 11c-2 0-3 2-6 4-4 3-2 7 1 7 2 0 3-1 5-1s3 1 5 1c3 0 5-4 1-7-3-2-4-4-6-4ZM5 12a2.4 2.8 0 1 0 0-5.6 2.4 2.8 0 0 0 0 5.6Zm14 0a2.4 2.8 0 1 0 0-5.6 2.4 2.8 0 0 0 0 5.6ZM9 8a2.4 3 0 1 0 0-6 2.4 3 0 0 0 0 6Zm6 0a2.4 3 0 1 0 0-6 2.4 3 0 0 0 0 6Z';
 
-export const filledHazardIcons = ['aggressive_dogs', 'dogs_prohibited'];
+export const filledHazardIcons = ['boars', 'aggressive_dogs', 'dogs_prohibited'];
 
 export type MarkerIcon = { kind: 'poi' | 'hazard'; type: string } | { kind: 'walk' };
 
