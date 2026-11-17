@@ -1,7 +1,7 @@
 import { colors } from '../theme';
 import type { Region } from './types';
 import { PINCH_ZOOM_SCRIPT } from './pinchZoom';
-import { hazardIcons, pawPath, poiIcons } from './markerIcons';
+import { filledHazardIcons, hazardIcons, pawPath, poiIcons } from './markerIcons';
 
 export const FOCUS_DEFAULT_ZOOM = 17;
 export const DEFAULT_REGION: Region = { latitude: 48.85, longitude: 2.35, latitudeDelta: 0.1, longitudeDelta: 0.1 };
@@ -95,6 +95,7 @@ window.addEventListener('unhandledrejection', function(){ post({type:'error'}); 
   }
   var layers = [];
   var iconPaths = ${JSON.stringify({ poi: poiIcons, hazard: hazardIcons, walk: { other: pawPath } })};
+  var filledHazardIcons = ${JSON.stringify(filledHazardIcons)};
   var sceneKey;
   var userMarker = null;
   var userDot = null;
@@ -161,8 +162,10 @@ window.addEventListener('unhandledrejection', function(){ post({type:'error'}); 
         svg.setAttribute('viewBox', '0 0 24 24');
         svg.setAttribute('aria-hidden', 'true');
         path.setAttribute('d', Object.prototype.hasOwnProperty.call(icons, m.icon.type) ? icons[m.icon.type] : icons.other);
-        path.setAttribute('fill', m.icon.kind === 'walk' ? '#000' : 'none');
-        if (m.icon.kind !== 'walk') {
+        var filled = m.icon.kind === 'hazard' && filledHazardIcons.includes(m.icon.type);
+        path.setAttribute('fill', m.icon.kind === 'walk' ? '#000' : filled ? '#fff' : 'none');
+        path.setAttribute('fill-rule', 'evenodd');
+        if (m.icon.kind !== 'walk' && !filled) {
           path.setAttribute('stroke', '#fff');
           path.setAttribute('stroke-width', '2');
           path.setAttribute('stroke-linecap', 'round');

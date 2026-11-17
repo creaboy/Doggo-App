@@ -14,7 +14,7 @@ export const poiTypeLabels: Record<string, string> = {
 };
 
 export const hazardTypeLabels: Record<string, string> = {
-  cars: "Dangerous road", crossing: "Road crossing", caterpillars: "Caterpillars", boars: "Wild boars",
+  cars: "Dangerous road", crossing: "Traversée de route à surveiller", caterpillars: "Caterpillars", boars: "Wild boars",
   livestock: "Livestock", aggressive_dogs: "Aggressive dogs", toxic: "Toxic plants/food", hunting: "Hunting",
   path_closed: "Path closed", dogs_prohibited: "Dogs prohibited", other: "Other",
 };

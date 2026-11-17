@@ -3,7 +3,7 @@ import type { Draft, Leg } from '../routeDraft';
 
 export const featureOptions: Record<string, string> = { shade: 'Ombragé', water: 'Point d’eau', swimming: 'Baignade', parking: 'Parking', low_traffic: 'Peu de circulation', quiet: 'Calme', easy_path: 'Chemin facile' };
 export const interestOptions: Record<string, string> = { water: 'Eau', swimming: 'Baignade', parking: 'Parking', viewpoint: 'Point de vue', trash: 'Poubelle', other: 'Autre intérêt' };
-export const dangerOptions: Record<string, string> = { cars: 'Route dangereuse', crossing: 'Traversée de route', caterpillars: 'Chenilles', boars: 'Sangliers', livestock: 'Troupeaux', aggressive_dogs: 'Chiens agressifs', toxic: 'Plantes / aliments toxiques', hunting: 'Chasse', path_closed: 'Passage fermé / obstacle', dogs_prohibited: 'Chiens interdits', other: 'Autre danger' };
+export const dangerOptions: Record<string, string> = { cars: 'Route dangereuse', crossing: 'Traversée de route à surveiller', caterpillars: 'Chenilles', boars: 'Sangliers', livestock: 'Troupeaux', aggressive_dogs: 'Chiens agressifs', toxic: 'Plantes / aliments toxiques', hunting: 'Chasse', path_closed: 'Passage fermé / obstacle', dogs_prohibited: 'Chiens interdits', other: 'Autre danger' };
 export type RouteNote = { id: string; kind: 'poi' | 'hazard'; type: string; coordinate: LatLng; description: string };
 export type SegmentDetails = { features?: string[]; interests?: string[]; dangers?: string[]; notes?: string };
 export type RouteVariant = { name: string; draft: Draft };

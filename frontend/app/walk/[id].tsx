@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, TextInput, KeyboardAvoidingView, Platform, Modal, Share } from "react-native";
 import Svg, { Path } from "react-native-svg";
-import { annotationPath } from "../../src/maps/markerIcons";
+import { annotationPath, filledHazardIcons } from "../../src/maps/markerIcons";
 import * as Clipboard from "expo-clipboard";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -285,8 +285,10 @@ export default function WalkDetail() {
 }
 
 function AnnotationIcon({ kind, type, color }: { kind: 'poi' | 'hazard'; type: string; color: string }) {
+  const filled = kind === 'hazard' && filledHazardIcons.includes(type);
   return <Svg width={20} height={20} viewBox="0 0 24 24">
-    <Path d={annotationPath(kind, type)} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+    <Path d={annotationPath(kind, type)} fill={filled ? color : 'none'} fillRule="evenodd"
+      stroke={filled ? 'none' : color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
   </Svg>;
 }
 
