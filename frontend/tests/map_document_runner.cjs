@@ -65,8 +65,13 @@ function startMap(native = false, apiKey = 'test-key') {
     divIcon: opts => opts, latLngBounds: pts => pts, DomEvent: { stopPropagation() {} },
   };
   window.L = L;
+  const createElement = () => ({
+    style: {}, textContent: '', attributes: {}, children: [],
+    setAttribute(key, value) { this.attributes[key] = value; },
+    appendChild(child) { this.children.push(child); },
+  });
   const context = vm.createContext({ window, L, setTimeout(cb) { timers.set(++timerId, cb); return timerId; }, clearTimeout(id) { timers.delete(id); }, document: { getElementById: () => canvas,
-    createElement: () => ({ style: {}, textContent: '' }) } });
+    createElement, createElementNS: createElement } });
   // Execute the exact inline scripts shipped to both iframe and WebView.
   for (const match of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) vm.runInContext(match[1], context);
   return { window, messages, layers, fits, views, removed, listeners, canvas, map, timers };
@@ -77,6 +82,24 @@ const scene = () => ({ revision: 1, segmentEditable: true, fitToRoute: true, fit
   segments: [{ freedom: 'free', coordinates: [{ latitude: 48.85, longitude: 2.35 }, { latitude: 48.86, longitude: 2.36 }] }],
   markers: [{ id: 'point-1', pointIndex: 1, coordinate: { latitude: 48.86, longitude: 2.36 }, badge: '<b>1</b>', label: '<img src=x>' }],
 });
+
+const iconMap = startMap();
+const iconCases = [
+  { kind: 'walk' },
+  { kind: 'poi', type: 'water' },
+  { kind: 'poi', type: 'swimming' },
+  { kind: 'hazard', type: 'crossing' },
+  { kind: 'hazard', type: 'cars' },
+  { kind: 'hazard', type: '__proto__' },
+];
+iconMap.window.__doggoUpdate({ basemap: 'liberty', scene: {
+  markers: iconCases.map((icon, i) => ({ id: String(i), icon, coordinate: { latitude: 48.85, longitude: 2.35 }, color: '#60A5FA' })),
+} });
+const pictograms = iconMap.layers.filter(l => l.kind === 'marker').map(l => l.options.icon.html.children[0].children[0].attributes);
+assert.equal(pictograms[0].fill, '#000');
+assert.equal(pictograms[1].stroke, '#fff');
+assert.equal(new Set(pictograms.map(p => p.d)).size, iconCases.length);
+assert.ok(pictograms.every(p => p.d.startsWith('M')));
 
 for (const native of [false, true]) {
   const m = startMap(native);

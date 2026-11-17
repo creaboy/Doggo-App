@@ -1,6 +1,7 @@
 import { colors } from '../theme';
 import type { Region } from './types';
 import { PINCH_ZOOM_SCRIPT } from './pinchZoom';
+import { hazardIcons, pawPath, poiIcons } from './markerIcons';
 
 export const FOCUS_DEFAULT_ZOOM = 17;
 export const DEFAULT_REGION: Region = { latitude: 48.85, longitude: 2.35, latitudeDelta: 0.1, longitudeDelta: 0.1 };
@@ -27,6 +28,7 @@ export function buildMapDocument(region: Region): string {
 <style>html,body,#m{margin:0;padding:0;height:100%;width:100%;background:#F1F4EE;}
 .pin{width:24px;height:24px;border-radius:50%;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.4);box-sizing:border-box;display:flex;align-items:center;justify-content:center;color:#fff;font:700 12px system-ui,sans-serif;}
 .leaflet-container{background:#F1F4EE;touch-action:none;overscroll-behavior:contain;}
+.pin svg{width:18px;height:18px;flex:none;}
 .gps-dot{width:22px;height:22px;box-sizing:border-box;border:3px solid ${colors.surfaceSecondary};border-radius:50%;background:${colors.location};box-shadow:0 0 0 2px #0001;}
 #credits{position:absolute;bottom:0;right:0;z-index:1000;background:#ffffffdf;padding:1px 4px;font:10px/16px system-ui,sans-serif;color:#454545;white-space:nowrap;max-width:100%;box-sizing:border-box;}
 #credits a{color:inherit;text-decoration:none;}
@@ -92,6 +94,7 @@ window.addEventListener('unhandledrejection', function(){ post({type:'error'}); 
     } catch (error) { fail(); }
   }
   var layers = [];
+  var iconPaths = ${JSON.stringify({ poi: poiIcons, hazard: hazardIcons, walk: { other: pawPath } })};
   var sceneKey;
   var userMarker = null;
   var userDot = null;
@@ -146,12 +149,30 @@ window.addEventListener('unhandledrejection', function(){ post({type:'error'}); 
     });
     (data.markers || []).forEach(function(m){
       var selected = m.pointIndex !== undefined && m.pointIndex === data.selectedPointIndex;
-      var size = selected ? 30 : 24;
+      var icons = m.icon && Object.prototype.hasOwnProperty.call(iconPaths, m.icon.kind) && iconPaths[m.icon.kind];
+      var size = icons ? 32 : selected ? 30 : 24;
       var pin = document.createElement('div');
       pin.className = 'pin'; pin.style.width = pin.style.height = size+'px';
       pin.style.backgroundColor = m.color || '${colors.brandPrimary}';
       pin.style.borderColor = selected ? '${colors.location}' : '${colors.surfaceSecondary}';
-      pin.textContent = m.badge || '';
+      if (icons) {
+        var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        svg.setAttribute('viewBox', '0 0 24 24');
+        svg.setAttribute('aria-hidden', 'true');
+        path.setAttribute('d', Object.prototype.hasOwnProperty.call(icons, m.icon.type) ? icons[m.icon.type] : icons.other);
+        path.setAttribute('fill', m.icon.kind === 'walk' ? '#000' : 'none');
+        if (m.icon.kind !== 'walk') {
+          path.setAttribute('stroke', '#fff');
+          path.setAttribute('stroke-width', '2');
+          path.setAttribute('stroke-linecap', 'round');
+          path.setAttribute('stroke-linejoin', 'round');
+        }
+        svg.appendChild(path);
+        pin.appendChild(svg);
+      } else {
+        pin.textContent = m.badge || '';
+      }
       var icon = L.divIcon({html: pin, iconSize:[size,size], iconAnchor:[size/2,size/2], className:''});
       var mk = L.marker([m.coordinate.latitude, m.coordinate.longitude], {icon: icon, title: m.label || '', zIndexOffset: selected ? 1000 : 0}).addTo(map);
       mk.on('click', function(e){ L.DomEvent.stopPropagation(e); if(Date.now()>=suppressClickUntil) post({type:'markerPress', id: m.id}); });

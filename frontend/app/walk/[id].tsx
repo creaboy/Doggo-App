@@ -1,9 +1,11 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, TextInput, KeyboardAvoidingView, Platform, Modal, Share } from "react-native";
+import Svg, { Path } from "react-native-svg";
+import { annotationPath } from "../../src/maps/markerIcons";
 import * as Clipboard from "expo-clipboard";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { CaretLeft, Star, Clock, TrendUp, MapPin, Warning, CheckCircle, Drop, Car, Trash, Eye, Heart, ShareNetwork } from "phosphor-react-native";
+import { CaretLeft, Star, Clock, TrendUp, CheckCircle, Heart, ShareNetwork } from "phosphor-react-native";
 import { colors, radius, spacing } from "../../src/theme";
 import { DoggoMap, SegmentInput } from "../../src/DoggoMap";
 import { api } from "../../src/api";
@@ -11,7 +13,7 @@ import { regionFor } from "../../src/routeDraft";
 import { featureOptions, interestOptions, dangerOptions } from '../../src/create/routeMetadata';
 import { useAuth } from "../../src/AuthContext";
 import { useFavorites } from "../../src/FavoritesContext";
-import { environmentLabels, difficultyLabels, freedomLabels, formatDuration, timeAgo, poiTypeLabels, hazardTypeLabels, walkFreedomColor } from "../../src/labels";
+import { environmentLabels, difficultyLabels, freedomLabels, formatDuration, timeAgo, poiTypeLabels, hazardTypeLabels, walkColor } from "../../src/labels";
 
 export default function WalkDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -64,9 +66,9 @@ export default function WalkDetail() {
     legs: segments.map(s => ({ ...s, source: "gps" as const })) });
 
   const markers = [
-    { id: "start", coordinate: { latitude: walk.start_lat, longitude: walk.start_lng }, color: colors.brandPrimary, label: "Départ de la balade" },
-    ...pois.map((p: any) => ({ id: p.id, coordinate: { latitude: p.lat, longitude: p.lng }, color: colors.brandSecondary, label: poiTypeLabels[p.type] })),
-    ...hazards.map((h: any, i: number) => ({ id: h.id || `variant-hazard-${i}`, coordinate: { latitude: h.lat, longitude: h.lng }, color: colors.error, label: hazardTypeLabels[h.type] })),
+    { id: "start", coordinate: { latitude: walk.start_lat, longitude: walk.start_lng }, color: walkColor(walk), icon: { kind: "walk" as const }, label: "Départ de la balade" },
+    ...pois.map((p: any) => ({ id: p.id, coordinate: { latitude: p.lat, longitude: p.lng }, color: colors.brandSecondary, icon: { kind: "poi" as const, type: p.type }, label: poiTypeLabels[p.type] })),
+    ...hazards.map((h: any, i: number) => ({ id: h.id || `variant-hazard-${i}`, coordinate: { latitude: h.lat, longitude: h.lng }, color: h.status === "resolved" ? colors.muted : colors.error, icon: { kind: "hazard" as const, type: h.type }, label: hazardTypeLabels[h.type] })),
   ];
 
   const rate = async (stars: number) => {
@@ -165,7 +167,7 @@ export default function WalkDetail() {
           <View style={styles.statsGrid}>
             <StatBox icon={<Clock size={18} color={colors.brandPrimary} />} label="Duration" value={formatDuration(walk.duration_min)} />
             <StatBox icon={<TrendUp size={18} color={colors.brandPrimary} />} label="Distance" value={`${route.distance_km} km`} />
-            <StatBox icon={<View style={[styles.stripe, { backgroundColor: walkFreedomColor[walk.dog_freedom] }]} />} label={freedomLabels[walk.dog_freedom]} value={`${route.off_leash_pct}% free`} />
+            <StatBox icon={<View style={[styles.stripe, { backgroundColor: walkColor(walk) }]} />} label={freedomLabels[walk.dog_freedom]} value={`${route.off_leash_pct}% free`} />
           </View>
         </View>
 
@@ -215,7 +217,7 @@ export default function WalkDetail() {
           {hazards.length === 0 ? <Text style={styles.emptyText}>No hazards reported.</Text> : hazards.map((h: any, i: number) => (
             <View key={h.id || i} style={styles.hazardRow} testID={`hazard-${h.id || i}`}>
               <View style={[styles.iconBox, { backgroundColor: h.status === "resolved" ? colors.surfaceTertiary : "#FEE2E2" }]}>
-                <Warning size={18} color={h.status === "resolved" ? colors.muted : colors.error} weight="fill" />
+                <AnnotationIcon kind="hazard" type={h.type} color={h.status === "resolved" ? colors.muted : colors.error} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.hazardTitle}>{hazardTypeLabels[h.type]}{h.status === "resolved" ? " · resolved" : ""}</Text>
@@ -236,7 +238,7 @@ export default function WalkDetail() {
         <View style={styles.list}>
           {pois.length === 0 ? <Text style={styles.emptyText}>No POIs yet.</Text> : pois.map((p: any) => (
             <View key={p.id} style={styles.poiRow} testID={`poi-${p.id}`}>
-              <View style={styles.iconBox}>{poiIcon(p.type)}</View>
+              <View style={styles.iconBox}><AnnotationIcon kind="poi" type={p.type} color={colors.brandSecondary} /></View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.hazardTitle}>{poiTypeLabels[p.type]}</Text>
                 {!!p.description && <Text style={styles.hazardDesc}>{p.description}</Text>}
@@ -282,14 +284,10 @@ export default function WalkDetail() {
   );
 }
 
-function poiIcon(type: string) {
-  const props = { size: 18, color: colors.brandPrimary, weight: "fill" as const };
-  if (type === "water") return <Drop {...props} />;
-  if (type === "swimming") return <Drop {...props} />;
-  if (type === "parking") return <Car {...props} />;
-  if (type === "viewpoint") return <Eye {...props} />;
-  if (type === "trash") return <Trash {...props} />;
-  return <MapPin {...props} />;
+function AnnotationIcon({ kind, type, color }: { kind: 'poi' | 'hazard'; type: string; color: string }) {
+  return <Svg width={20} height={20} viewBox="0 0 24 24">
+    <Path d={annotationPath(kind, type)} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>;
 }
 
 function LegendRow() {

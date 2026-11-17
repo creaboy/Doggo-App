@@ -21,6 +21,8 @@ export const hazardTypeLabels: Record<string, string> = {
 
 export const freedomColor = { free: colors.success, caution: colors.warning, leash: colors.error };
 export const walkFreedomColor: Record<string, string> = { free: colors.success, partial: colors.warning, leash: colors.error };
+export const walkColor = (walk: { environment: string; dog_freedom: string }) =>
+  walk.environment === 'city' ? '#60A5FA' : walkFreedomColor[walk.dog_freedom] || colors.brandPrimary;
 
 export function timeAgo(iso?: string) {
   if (!iso) return "";

@@ -76,7 +76,7 @@ export default function CreateScreen() {
   const markers = [
     ...draftMarkers(c.draft, editable ? c.selection : null, editable ? selectPoint : () => {}),
     ...annotations.map(n => ({ id: n.id, coordinate: n.coordinate, color: n.kind === 'hazard' ? colors.error : colors.brandSecondary,
-      badge: n.kind === 'hazard' ? '!' : '★', label: (n.kind === 'hazard' ? dangerOptions : interestOptions)[n.type], onPress: step < 2 ? () => setNote(n) : undefined })),
+      icon: { kind: n.kind, type: n.type }, label: (n.kind === 'hazard' ? dangerOptions : interestOptions)[n.type], onPress: step < 2 ? () => setNote(n) : undefined })),
   ];
   const publish = async () => {
     c.setError('');

@@ -6,7 +6,7 @@ import { Star, MapPin, Clock, TrendUp, X, SlidersHorizontal, List as ListIcon, M
 import { colors, radius, spacing } from "../../src/theme";
 import { api } from "../../src/api";
 import { DoggoMap } from "../../src/DoggoMap";
-import { environmentLabels, difficultyLabels, freedomLabels, formatDuration, timeAgo, walkFreedomColor } from "../../src/labels";
+import { environmentLabels, difficultyLabels, freedomLabels, formatDuration, timeAgo, walkColor } from "../../src/labels";
 import { useFavorites } from "../../src/FavoritesContext";
 import { useAuth } from "../../src/AuthContext";
 import { useUserLocation, distanceKm } from "../../src/useUserLocation";
@@ -88,7 +88,8 @@ export default function ExploreScreen() {
   const markers = displayWalks.map((w) => ({
     id: w.id,
     coordinate: { latitude: w.start_lat, longitude: w.start_lng },
-    color: walkFreedomColor[w.dog_freedom],
+    color: walkColor(w),
+    icon: { kind: 'walk' as const },
     label: w.title,
     onPress: () => router.push(`/walk/${w.id}`),
   }));
@@ -188,7 +189,7 @@ export function MiniCard({ walk, onPress }: { walk: any; onPress: () => void }) 
   const fav = isFavorite(walk.id);
   return (
     <Pressable testID={`walk-mini-${walk.id}`} style={styles.miniCard} onPress={onPress}>
-      <View style={[styles.miniStrip, { backgroundColor: walkFreedomColor[walk.dog_freedom] }]} />
+      <View style={[styles.miniStrip, { backgroundColor: walkColor(walk) }]} />
       {user && (
         <Pressable testID={`fav-mini-${walk.id}`} hitSlop={8} style={styles.miniFav} onPress={() => toggle(walk.id)}>
           <Heart size={18} color={fav ? colors.error : colors.muted} weight={fav ? "fill" : "regular"} />
@@ -214,7 +215,7 @@ export function WalkCard({ walk, onPress }: { walk: any; onPress: () => void }) 
   return (
     <Pressable testID={`walk-card-${walk.id}`} style={styles.card} onPress={onPress}>
       <View style={styles.cardRow}>
-        <View style={[styles.cardStripe, { backgroundColor: walkFreedomColor[walk.dog_freedom] }]} />
+        <View style={[styles.cardStripe, { backgroundColor: walkColor(walk) }]} />
         <View style={{ flex: 1, padding: spacing.md, gap: 6 }}>
           <View style={styles.cardTitleRow}>
             <Text style={styles.cardTitle} numberOfLines={1}>{walk.title}</Text>

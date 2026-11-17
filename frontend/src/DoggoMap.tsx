@@ -38,7 +38,7 @@ export const DoggoMap: React.FC<MapProps> = (props) => {
   };
   const scene = useMemo(() => ({
     segments: props.segments?.map(({ coordinates, freedom, generated, pending, offPath }) => ({ coordinates, freedom, generated, pending, offPath })),
-    markers: (props.markers || []).map(({ id, coordinate, color, label, badge, pointIndex }) => ({ id, coordinate, color, label, badge, pointIndex })),
+    markers: (props.markers || []).map(({ id, coordinate, color, label, badge, icon, pointIndex }) => ({ id, coordinate, color, label, badge, icon, pointIndex })),
     segmentEditable: !!props.onSegmentPress,
     longPressEnabled: !!props.onLongPress,
     selectedSegmentIndex: props.selectedSegmentIndex, selectedPointIndex: props.selectedPointIndex,
