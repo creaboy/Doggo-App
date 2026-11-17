@@ -36,6 +36,11 @@
       ],
       "expo-font",
       "expo-image",
+      ["expo-image-picker", {
+        "photosPermission": "Choisis une photo pour la fiche de ton chien.",
+        "cameraPermission": false,
+        "microphonePermission": false
+      }],
       "expo-secure-store",
       "expo-status-bar"
     ],

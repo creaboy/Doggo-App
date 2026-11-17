@@ -1,6 +1,7 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Header, Depends
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
+from starlette.concurrency import run_in_threadpool
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
@@ -13,6 +14,7 @@ import secrets
 from datetime import datetime, timezone, timedelta
 from route_geometry import validate_loop, meters
 from walking_routing import snap_points, match_points
+from dog_profiles import DogProfile, normalize_photo
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -308,6 +310,8 @@ async def get_walk(walk_id: str, user=Depends(optional_user)):
     walk = await db.walks.find_one({"id": walk_id}, {"_id": 0})
     if not walk:
         raise HTTPException(status_code=404, detail="Walk not found")
+    creator = walk.get("created_by")
+    has_visible_dog = bool(user and creator and await db.dog_profiles.find_one({"_id": creator, "visible": True}, {"_id": 1}))
     pois = await db.pois.find({"walk_id": walk_id}, {"_id": 0}).to_list(200)
     hazards = await db.hazards.find({"walk_id": walk_id}, {"_id": 0}).to_list(200)
     comments = await db.comments.find({"walk_id": walk_id}, {"_id": 0}).sort("created_at", -1).to_list(200)
@@ -319,7 +323,38 @@ async def get_walk(walk_id: str, user=Depends(optional_user)):
     if user:
         fav = await db.favorites.find_one({"user_id": user["user_id"], "walk_id": walk_id})
         favorited = fav is not None
-    return {"walk": walk, "pois": pois, "hazards": hazards, "comments": comments, "confirmations_30d": confirmations_30d, "favorited": favorited}
+    return {"walk": walk, "pois": pois, "hazards": hazards, "comments": comments, "confirmations_30d": confirmations_30d,
+            "favorited": favorited, "has_visible_dog": has_visible_dog}
+
+
+@api_router.get("/me/dog", response_model=Optional[DogProfile])
+async def my_dog(user=Depends(current_user)):
+    return await db.dog_profiles.find_one({"_id": user["user_id"]}, {"_id": 0})
+
+
+@api_router.put("/me/dog", response_model=DogProfile)
+async def save_my_dog(profile: DogProfile, user=Depends(current_user)):
+    fields = profile.model_dump()
+    if profile.photo_jpeg is not None:
+        current = await db.dog_profiles.find_one({"_id": user["user_id"]}, {"photo_jpeg": 1})
+        if not current or current.get("photo_jpeg") != profile.photo_jpeg:
+            try:
+                fields["photo_jpeg"] = await run_in_threadpool(normalize_photo, profile.photo_jpeg)
+            except ValueError as exc:
+                raise HTTPException(422, str(exc)) from exc
+    await db.dog_profiles.replace_one({"_id": user["user_id"]}, fields, upsert=True)
+    return fields
+
+
+@api_router.get("/members/{member_id}/dog")
+async def member_dog(member_id: str, user=Depends(current_user)):
+    dog = await db.dog_profiles.find_one({"_id": member_id, "visible": True}, {"_id": 0})
+    if not dog:
+        raise HTTPException(404, "Aucune fiche chien partagée.")
+    member = await db.users.find_one({"user_id": member_id}, {"_id": 0, "username": 1})
+    if not member:
+        raise HTTPException(404, "Aucune fiche chien partagée.")
+    return {"owner_name": member["username"], "dog": DogProfile.model_validate(dog).model_dump(exclude={"visible"})}
 
 
 def _compute_distance(segments: List[RouteSegment]) -> float:

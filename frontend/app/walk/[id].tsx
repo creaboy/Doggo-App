@@ -160,6 +160,10 @@ export default function WalkDetail() {
             <Text style={styles.metaText}>{difficultyLabels[walk.difficulty]}</Text>
           </View>
           {!!walk.description && <Text style={styles.desc}>{walk.description}</Text>}
+          {!!data.has_visible_dog && !!walk.created_by && <Pressable accessibilityRole="link" style={styles.outlineBtn} testID="walk-owner-dog"
+            onPress={() => router.push({ pathname: '/member-dog/[id]', params: { id: walk.created_by } })}>
+            <Text style={styles.outlineBtnText}>Voir le chien de {walk.creator_name || 'l’auteur'}</Text>
+          </Pressable>}
 
           <View style={styles.statsGrid}>
             <StatBox icon={<Clock size={18} color={colors.brandPrimary} />} label="Duration" value={formatDuration(walk.duration_min)} />

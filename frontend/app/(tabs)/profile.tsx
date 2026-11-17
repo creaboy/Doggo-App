@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { SignOut, Star, PathIcon } from "phosphor-react-native";
+import { CaretRight, PawPrint, SignOut, Star, PathIcon } from "phosphor-react-native";
 import { useAuth } from "../../src/AuthContext";
 import { colors, radius, spacing } from "../../src/theme";
 import { api } from "../../src/api";
@@ -52,6 +52,11 @@ export default function ProfileScreen() {
         </Pressable>
       </View>
 
+      <Pressable accessibilityRole="button" testID="open-dog-profile" style={styles.dogLink} onPress={() => router.push('/dog-profile')}>
+        <PawPrint size={23} color={colors.brandPrimary} />
+        <Text style={[styles.name, { flex: 1 }]}>Mon chien</Text>
+        <CaretRight size={18} color={colors.muted} />
+      </Pressable>
       <View style={styles.statsRow}>
         <StatBox label="Walks created" value={walks.length} />
         <StatBox label="Ratings given" value={activity?.ratings.length ?? 0} />
@@ -119,6 +124,7 @@ const styles = StyleSheet.create({
   email: { fontSize: 13, color: colors.muted },
   iconBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surfaceTertiary, alignItems: "center", justifyContent: "center" },
   statsRow: { flexDirection: "row", gap: spacing.sm, marginHorizontal: spacing.md, marginTop: spacing.md },
+  dogLink: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginHorizontal: spacing.md, marginTop: spacing.md, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.surfaceTertiary },
   statBox: { flex: 1, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: spacing.md, alignItems: "center", borderWidth: 1, borderColor: colors.border },
   statValue: { fontSize: 22, fontWeight: "700", color: colors.brandPrimary },
   statLabel: { fontSize: 11, color: colors.muted, marginTop: 2 },
