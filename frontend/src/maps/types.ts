@@ -14,6 +14,7 @@ export type MapProps = {
   markers?: MarkerInput[];
   onPress?: (c: LatLng) => void;
   onLongPress?: (c: LatLng) => void;
+  onMapGesture?: () => void;
   showsUserLocation?: boolean;
   style?: StyleProp<ViewStyle>;
   testID?: string;
@@ -34,9 +35,10 @@ export type MapProps = {
 export type MapScene = Pick<MapProps, 'segments' | 'selectedSegmentIndex' | 'selectedPointIndex' | 'fitToRoute' | 'fitRevision'> & {
   segmentEditable: boolean;
   longPressEnabled?: boolean;
+  gestureEnabled?: boolean;
   markers: Omit<MarkerInput, 'onPress'>[];
 };
 export type Basemap = 'liberty' | 'voyager';
 export type MapPayload = Pick<MapProps, 'userCoordinate' | 'userAccuracy' | 'locationStale' | 'locationFocus'> & { scene: MapScene; basemap: Basemap };
-export type MapMessage = { type: 'ready' | 'error' | 'tilesLoaded' | 'basemapLoading' | 'press' | 'longPress' | 'segmentPress' | 'markerPress'; lat?: number; lng?: number; index?: number; id?: string; message?: string };
+export type MapMessage = { type: 'ready' | 'error' | 'tilesLoaded' | 'basemapLoading' | 'press' | 'longPress' | 'segmentPress' | 'markerPress' | 'gesture'; lat?: number; lng?: number; index?: number; id?: string; message?: string };
 export type MapSurfaceProps = { html: string; payload: MapPayload; onMessage: (message: MapMessage) => void; testID: string };

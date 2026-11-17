@@ -50,7 +50,7 @@ class PoiInput(BaseModel):
 
 
 class HazardInput(PoiInput):
-    type: Literal["cars", "crossing", "caterpillars", "boars", "livestock", "aggressive_dogs", "toxic", "hunting", "path_closed", "dogs_prohibited", "other"]
+    type: Literal["cars", "crossing", "caterpillars", "boars", "livestock", "aggressive_dogs", "toxic", "hunting", "path_closed", "dogs_prohibited", "event", "other"]
 
 
 class VariantCreate(BaseModel):
@@ -81,7 +81,7 @@ class Hazard(BaseModel):
     walk_id: str
     type: Literal[
         "cars", "crossing", "caterpillars", "boars", "livestock",
-        "aggressive_dogs", "toxic", "hunting", "path_closed", "dogs_prohibited", "other"
+        "aggressive_dogs", "toxic", "hunting", "path_closed", "dogs_prohibited", "event", "other"
     ]
     lat: float
     lng: float
@@ -455,13 +455,12 @@ async def add_comment(walk_id: str, body: dict, user=Depends(current_user)):
 # ============ Hazards ============
 
 @api_router.post("/walks/{walk_id}/hazards")
-async def add_hazard(walk_id: str, body: dict, user=Depends(current_user)):
+async def add_hazard(walk_id: str, body: HazardInput, user=Depends(current_user)):
+    if not await db.walks.find_one({"id": walk_id}, {"_id": 1}):
+        raise HTTPException(404, "Balade introuvable")
     h = Hazard(
         walk_id=walk_id,
-        type=body["type"],
-        lat=body["lat"],
-        lng=body["lng"],
-        description=body.get("description", ""),
+        **body.model_dump(),
         created_by=user["user_id"],
         creator_name=user["username"],
     )
@@ -483,9 +482,31 @@ async def confirm_hazard(hazard_id: str, user=Depends(current_user)):
 
 @api_router.post("/hazards/{hazard_id}/resolve")
 async def resolve_hazard(hazard_id: str, user=Depends(current_user)):
-    await db.hazards.update_one({"id": hazard_id}, {
+    result = await db.hazards.update_one({"id": hazard_id}, {
         "$set": {"status": "resolved", "last_confirmed_at": datetime.now(timezone.utc)},
     })
+    if not result.matched_count:
+        raise HTTPException(404, "Signalement introuvable")
+    return {"ok": True}
+
+
+@api_router.post("/walks/{walk_id}/variants/{variant}/hazards/{index}/{action}")
+async def update_variant_hazard(walk_id: str, variant: str, index: int,
+                                action: Literal["confirm", "resolve"], user=Depends(current_user)):
+    # Existing variants store their original reports inline. Their order is fixed.
+    if index < 0 or index >= 200:
+        raise HTTPException(404, "Signalement introuvable")
+    field = f"variants.$.hazards.{index}"
+    changes = {"$set": {f"{field}.status": "active" if action == "confirm" else "resolved",
+                        f"{field}.last_confirmed_at": datetime.now(timezone.utc)}}
+    if action == "confirm":
+        changes["$inc"] = {f"{field}.confirmations": 1}
+    result = await db.walks.update_one(
+        {"id": walk_id, "variants": {"$elemMatch": {"name": variant, f"hazards.{index}.type": {"$exists": True}}}},
+        changes,
+    )
+    if not result.matched_count:
+        raise HTTPException(404, "Signalement introuvable")
     return {"ok": True}
 
 

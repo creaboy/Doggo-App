@@ -18,6 +18,9 @@ class Collection:
     async def insert_one(self, document):
         self.documents.append(copy.deepcopy(document))
 
+    async def find_one(self, query, projection=None):
+        return next((item for item in self.documents if all(item.get(key) == value for key, value in query.items())), None)
+
 
 @pytest.fixture
 def api(monkeypatch):
@@ -98,3 +101,16 @@ def test_confirmed_off_road_loops_are_published_without_road_distance_checks(api
     assert response.status_code == 200, response.text
     assert database.walks.documents[0]['segments'][0]['off_path'] is True
     assert database.walks.documents[0]['variants'][0]['segments'][0]['off_path'] is True
+
+
+def test_live_event_uses_valid_coordinates_and_belongs_to_an_existing_walk(api):
+    client, database = api
+    database.walks.documents.append({'id': 'walk'})
+    event = {'type': 'event', 'lat': 48.85, 'lng': 2.35, 'description': 'Course locale'}
+    assert client.post('/api/walks/missing/hazards', json=event).status_code == 404
+    assert client.post('/api/walks/walk/hazards', json={**event, 'lat': 100}).status_code == 422
+    assert database.hazards.documents == []
+    response = client.post('/api/walks/walk/hazards', json=event)
+    assert response.status_code == 200
+    assert database.hazards.documents[0]['walk_id'] == 'walk'
+    assert response.json()['description'] == 'Course locale'

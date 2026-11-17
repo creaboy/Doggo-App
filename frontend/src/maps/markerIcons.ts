@@ -19,6 +19,7 @@ export const hazardIcons = {
   hunting: 'M3 12h5m8 0h5M12 3v5m0 8v5M5 12a7 7 0 1 0 14 0 7 7 0 1 0-14 0Z',
   path_closed: 'M3 6h18v8H3ZM6 14v7m12-7v7M4 13l6-6m1 6 6-6',
   dogs_prohibited: 'M2 3.5 3.5 2 22 20.5 20.5 22ZM11.9 8.3 16 3.8l.7 3.1 3.6 2-.9 2.6h-3l-1 1.4ZM4.2 7.8l9.3 9.3.1 2.9h-1.9l-.4-3.2-4.4-1-1.2 4.2h-2l.7-6.6-1.2-3.1Z',
+  event: 'M3 5h18v16H3ZM7 3v4m10-4v4M3 10h18m-9 3v5m-2.5-2.5h5',
   other: 'M12 3 2 21h20L12 3Zm0 6v5m0 3h.1',
 };
 

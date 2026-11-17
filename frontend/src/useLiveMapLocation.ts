@@ -76,6 +76,13 @@ const getSnapshot = () => snapshot;
 const getServerSnapshot = () => initial;
 const retry = () => { stop(); void start(true); };
 
+export function observeLiveMapLocation(onLocation: (location: Snapshot) => void) {
+  const notify = () => onLocation(snapshot);
+  const unsubscribe = subscribe(notify);
+  notify();
+  return unsubscribe;
+}
+
 // All mounted maps share one foreground watcher; no recording or routing is started here.
 export function useLiveMapLocation() {
   return { ...useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot), retry };

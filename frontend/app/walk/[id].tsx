@@ -1,9 +1,9 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useState, useCallback } from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, TextInput, KeyboardAvoidingView, Platform, Modal, Share } from "react-native";
 import Svg, { Path } from "react-native-svg";
 import { annotationPath, filledHazardIcons } from "../../src/maps/markerIcons";
 import * as Clipboard from "expo-clipboard";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { CaretLeft, Star, Clock, TrendUp, CheckCircle, Heart, ShareNetwork } from "phosphor-react-native";
 import { colors, radius, spacing } from "../../src/theme";
@@ -41,11 +41,12 @@ export default function WalkDetail() {
     try {
       const d = await api(`/walks/${id}`);
       setData(d);
+      setErr("");
     } catch (e: any) { setErr(e.message); }
     finally { setLoading(false); }
   }, [id]);
 
-  useEffect(() => { load(); }, [load]);
+  useFocusEffect(useCallback(() => { void load(); }, [load]));
 
   if (loading) return <View style={styles.center}><ActivityIndicator size="large" color={colors.brandPrimary} /></View>;
   if (err || !data) return <View style={styles.center}><Text style={styles.err}>{err || "Not found"}</Text></View>;
@@ -54,7 +55,7 @@ export default function WalkDetail() {
   const variant = walk.variants?.find((v: any) => v.name === variantName);
   const route = variant || walk;
   const pois = variant ? variant.pois.map((p: any, i: number) => ({ ...p, id: `variant-poi-${i}` })) : data.pois;
-  const hazards = variant ? variant.hazards : data.hazards;
+  const hazards = [...(data.hazards || []), ...(variant?.hazards || []).map((h: any, index: number) => ({ ...h, index }))];
 
   const segments: SegmentInput[] = route.segments.map((s: any) => ({
     freedom: s.freedom,
@@ -101,15 +102,11 @@ export default function WalkDetail() {
     catch {} finally { setConfirmOpen(false); load(); }
   };
 
-  const confirmHazard = async (hz: any) => {
+  const respondToHazard = async (hz: any, action: 'confirm' | 'resolve') => {
     if (!user) { router.push("/auth/login"); return; }
-    try { await api(`/hazards/${hz.id}/confirm`, { method: "POST" }); } catch {}
-    load();
-  };
-  const resolveHazard = async (hz: any) => {
-    if (!user) { router.push("/auth/login"); return; }
-    try { await api(`/hazards/${hz.id}/resolve`, { method: "POST" }); } catch {}
-    load();
+    const url = hz.id ? `/hazards/${hz.id}` : `/walks/${walk.id}/variants/${variantName}/hazards/${hz.index}`;
+    try { await api(`${url}/${action}`, { method: "POST" }); await load(); }
+    catch { showToast('Réponse non envoyée.'); }
   };
 
   const shareWalk = async () => {
@@ -175,6 +172,12 @@ export default function WalkDetail() {
           {[{ name: 'A', distance_km: walk.distance_km }, ...walk.variants].map((v: any) => <Pressable key={v.name} testID={`view-variant-${v.name}`} style={[styles.outlineBtn, variantName === v.name && { backgroundColor: colors.surfaceTertiary }]}
             onPress={() => { setVariantName(v.name); setSelectedSegment(null); }}><Text style={styles.outlineBtnText}>{v.name} · {v.distance_km} km</Text></Pressable>)}
         </View><Text style={styles.metaSmall}>Durée indiquée pour l’itinéraire A.</Text></View>}
+        <View style={[styles.section, { paddingTop: spacing.md }]}>
+          <Pressable testID="start-walk-navigation" accessibilityRole="button" style={styles.sheetBtnPrimary}
+            onPress={() => router.push({ pathname: '/navigate/[id]', params: { id: walk.id, variant: variantName } })}>
+            <Text style={styles.sheetBtnPrimaryText}>Démarrer la balade{walk.variants?.length ? ` · ${variantName}` : ''}</Text>
+          </Pressable>
+        </View>
         <View style={styles.mapWrap}>
           <DoggoMap testID="walk-detail-map" initialRegion={region} segments={segments} markers={markers} fitToRoute fitRevision={variantName.charCodeAt(0)}
             onSegmentPress={index => setSelectedSegment(index)} selectedSegmentIndex={selectedSegment ?? undefined} style={{ flex: 1 }} />
@@ -222,12 +225,12 @@ export default function WalkDetail() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.hazardTitle}>{hazardTypeLabels[h.type]}{h.status === "resolved" ? " · resolved" : ""}</Text>
                 {!!h.description && <Text style={styles.hazardDesc}>{h.description}</Text>}
-                {!variant && <Text style={styles.metaSmall}>Confirmed {timeAgo(h.last_confirmed_at)} · {h.confirmations} confirmations</Text>}
+                {!!h.last_confirmed_at && <Text style={styles.metaSmall}>Confirmed {timeAgo(h.last_confirmed_at)} · {h.confirmations || 0} confirmations</Text>}
               </View>
-              {h.status === "active" && (
+              {h.status !== "resolved" && (
                 <View style={{ gap: 4 }}>
-                  <Pressable testID={`confirm-hazard-${h.id}`} onPress={() => confirmHazard(h)} style={styles.tinyBtn}><Text style={styles.tinyBtnText}>Still there</Text></Pressable>
-                  <Pressable testID={`resolve-hazard-${h.id}`} onPress={() => resolveHazard(h)} style={[styles.tinyBtn, { backgroundColor: colors.surfaceTertiary }]}><Text style={styles.tinyBtnText}>Gone</Text></Pressable>
+                  <Pressable testID={`confirm-hazard-${h.id || i}`} onPress={() => respondToHazard(h, 'confirm')} style={styles.tinyBtn}><Text style={styles.tinyBtnText}>Still there</Text></Pressable>
+                  <Pressable testID={`resolve-hazard-${h.id || i}`} onPress={() => respondToHazard(h, 'resolve')} style={[styles.tinyBtn, { backgroundColor: colors.surfaceTertiary }]}><Text style={styles.tinyBtnText}>Gone</Text></Pressable>
                 </View>
               )}
             </View>

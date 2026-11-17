@@ -41,11 +41,12 @@ export const DoggoMap: React.FC<MapProps> = (props) => {
     markers: (props.markers || []).map(({ id, coordinate, color, label, badge, icon, pointIndex }) => ({ id, coordinate, color, label, badge, icon, pointIndex })),
     segmentEditable: !!props.onSegmentPress,
     longPressEnabled: !!props.onLongPress,
+    gestureEnabled: !!props.onMapGesture,
     selectedSegmentIndex: props.selectedSegmentIndex, selectedPointIndex: props.selectedPointIndex,
     fitToRoute: props.fitToRoute, fitRevision: props.fitRevision,
-  }), [props.segments, props.markers, props.onSegmentPress, props.onLongPress, props.selectedSegmentIndex, props.selectedPointIndex, props.fitToRoute, props.fitRevision]);
+  }), [props.segments, props.markers, props.onSegmentPress, props.onLongPress, props.onMapGesture, props.selectedSegmentIndex, props.selectedPointIndex, props.fitToRoute, props.fitRevision]);
   const payload = useMemo(() => ({ scene, basemap, userCoordinate: gps.coordinate, userAccuracy: gps.accuracy,
-    locationStale: gps.status !== 'live', locationFocus: focus }), [scene, basemap, gps.coordinate, gps.accuracy, gps.status, focus]);
+    locationStale: gps.status !== 'live', locationFocus: props.locationFocus ?? focus }), [scene, basemap, gps.coordinate, gps.accuracy, gps.status, props.locationFocus, focus]);
   const [attempt, setAttempt] = useState(0);
   const [error, setError] = useState('');
   const [mapLoading, setMapLoading] = useState(true);
@@ -58,6 +59,7 @@ export const DoggoMap: React.FC<MapProps> = (props) => {
     return () => clearTimeout(timer);
   }, [attempt, ready, mapLoading, basemap]);
   const onMessage = (message: MapMessage) => {
+    if (message.type === 'gesture') { props.onMapGesture?.(); return; }
     if (message.type === 'error') { setMapLoading(false); setError(message.message || 'Le fond de carte est indisponible. Votre tracé est conservé.'); return; }
     if (message.type === 'basemapLoading') { setMapLoading(true); setError(''); return; }
     if (message.type === 'ready') { setReady(true); return; }

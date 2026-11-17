@@ -32,7 +32,7 @@ function Gate() {
   return (
     <FavoritesProvider>
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.surface } }} />
-      <NearbyAlertsBanner />
+      {segments[0] !== 'navigate' && <NearbyAlertsBanner />}
     </FavoritesProvider>
   );
 }

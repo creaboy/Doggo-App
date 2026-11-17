@@ -104,7 +104,7 @@ window.addEventListener('unhandledrejection', function(){ post({type:'error'}); 
   var fitKey = '';
   map.createPane('doggo-user-location').style.zIndex = '650';
 
-  var longPressEnabled = false, holdTimer = null, holdStart = null, suppressClickUntil = 0;
+  var longPressEnabled = false, gestureEnabled = false, holdTimer = null, holdStart = null, suppressClickUntil = 0;
   var pointers = new Set();
   function cancelHold(){ clearTimeout(holdTimer); holdTimer=null; holdStart=null; }
   function longPress(latlng){
@@ -115,6 +115,7 @@ window.addEventListener('unhandledrejection', function(){ post({type:'error'}); 
   var container=document.getElementById('m');
   container.addEventListener('pointerdown',function(e){
     pointers.add(e.pointerId); cancelHold();
+    if (gestureEnabled && pointers.size === 2) post({type:'gesture'});
     if(!longPressEnabled || pointers.size!==1 || e.button!==0) return;
     holdStart={x:e.clientX,y:e.clientY};
     var at=map.mouseEventToLatLng(e);
@@ -123,11 +124,14 @@ window.addEventListener('unhandledrejection', function(){ post({type:'error'}); 
   container.addEventListener('pointermove',function(e){if(holdStart && Math.hypot(e.clientX-holdStart.x,e.clientY-holdStart.y)>10) cancelHold();});
   ['pointerup','pointercancel','lostpointercapture'].forEach(function(name){window.addEventListener(name,function(e){pointers.delete(e.pointerId);cancelHold();});});
   map.on('zoomstart dragstart',cancelHold);
+  map.on('dragstart',function(){ if(gestureEnabled) post({type:'gesture'}); });
+  container.addEventListener('wheel',function(){ if(gestureEnabled) post({type:'gesture'}); },{passive:true});
   map.on('unload',cancelHold);
   map.on('contextmenu',function(e){cancelHold();longPress(e.latlng);});
   map.on('click', function(e){ if(Date.now()>=suppressClickUntil) post({type:'press', lat:e.latlng.lat, lng:e.latlng.lng}); });
 
   window.__renderData = function(data){
+    gestureEnabled=!!data.gestureEnabled;
     routeCredits=!!(data.segments || []).some(function(seg){return !seg.offPath;});
     updateCredits();
     longPressEnabled=!!data.longPressEnabled;

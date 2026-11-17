@@ -564,6 +564,28 @@ test('accepting raw GPS off-road preserves the recorded geometry rather than con
   assert.equal(saved.offPath, true); assert.equal(saved.sealed, true);
 });
 
+test('navigation requires the departure, identifies corners, recovers from an excursion and finishes the loop once', () => {
+  const { buildNavigation, initialProgress, updateProgress } = makeLoader().load(path.join(__dirname, '../src/navigation.ts'));
+  const start = pt(48.85, 2.35);
+  const point = (north, east) => offsetMeters(start, north, east);
+  const route = buildNavigation([{ coordinates: [start, point(100, 0), point(100, 100), point(0, 100), start] }]);
+  assert.deepEqual(route.turns.map(turn => turn.side), ['right', 'right', 'right']);
+  const update = (state, fix) => updateProgress(route, state, fix, 5);
+  assert.equal(update(initialProgress, point(60, 0)).started, false);
+  let state = update(initialProgress, start);
+  assert.equal(state.started, true);
+  assert.equal(update(state, start).arrived, false);
+  state = update(state, point(45, 0));
+  const off = update(state, point(45, -80));
+  assert.equal(off.offRoute, true);
+  assert.equal(off.along, state.along);
+  state = update(off, point(60, 0));
+  assert.equal(state.offRoute, false);
+  for (const fix of [point(100, 0), point(100, 60), point(100, 100), point(40, 100), point(0, 100), point(0, 45), start]) state = update(state, fix);
+  assert.equal(state.arrived, true);
+  assert.equal(state.along, route.total);
+});
+
 async function run() {
   let passed = 0;
   const failures = [];
