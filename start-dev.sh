@@ -53,7 +53,7 @@ if [ ! -d "$BACKEND_DIR/venv" ]; then
     "$BACKEND_DIR/venv/bin/pip" install -r "$BACKEND_DIR/requirements.txt"
 fi
 
-"$BACKEND_DIR/venv/bin/python" -m uvicorn server:app --host 0.0.0.0 --port 8000 --reload --app-dir "$BACKEND_DIR" &
+DOGGO_SEED_FRIENDS=1 "$BACKEND_DIR/venv/bin/python" -m uvicorn server:app --host 0.0.0.0 --port 8000 --reload --app-dir "$BACKEND_DIR" &
 BACKEND_PID=$!
 
 cleanup() {

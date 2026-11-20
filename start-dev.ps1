@@ -152,7 +152,13 @@ if (-not (Test-Path $venvPython)) {
 }
 
 # Demarrage du processus backend
-$backendProc = Start-Process -FilePath $venvPython -ArgumentList "-m uvicorn server:app --host 0.0.0.0 --port 8000 --reload" -WorkingDirectory $backendDir -PassThru -WindowStyle Hidden
+$previousSeedFriends = $env:DOGGO_SEED_FRIENDS
+try {
+    $env:DOGGO_SEED_FRIENDS = "1"
+    $backendProc = Start-Process -FilePath $venvPython -ArgumentList "-m uvicorn server:app --host 0.0.0.0 --port 8000 --reload" -WorkingDirectory $backendDir -PassThru -WindowStyle Hidden
+} finally {
+    $env:DOGGO_SEED_FRIENDS = $previousSeedFriends
+}
 Write-Host " Backend demarre (PID: $($backendProc.Id)) sur http://localhost:8000" -ForegroundColor Green
 Write-Host " Documentation Swagger : http://localhost:8000/docs" -ForegroundColor DarkCyan
 

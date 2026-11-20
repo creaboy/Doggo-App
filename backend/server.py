@@ -3,6 +3,8 @@ from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from starlette.concurrency import run_in_threadpool
 from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo.errors import DuplicateKeyError
+from pymongo.uri_parser import parse_uri
 import os
 import logging
 from pathlib import Path
@@ -757,6 +759,37 @@ async def _snap_segments(segments: List[dict]) -> List[dict]:
     return out
 
 
+async def seed_friend_accounts():
+    # Shared demo credentials are enabled by the dev launcher for local MongoDB only.
+    if os.getenv("DOGGO_SEED_FRIENDS") != "1" or not mongo_url.startswith("mongodb://"):
+        return
+    hosts = parse_uri(mongo_url)["nodelist"]
+    if not hosts or any(host not in {"localhost", "127.0.0.1", "::1"} for host, _ in hosts):
+        return
+
+    now = datetime.now(timezone.utc)
+    password_hash = hash_password("BaladeDemo26!")
+    for name, initial, bio in [
+        ("Camille", "R", "J’aime les balades en forêt avec Rio."),
+        ("Nina", "L", "Je marche surtout le week-end avec Oslo."),
+        ("Hugo", "M", "Toujours partant pour découvrir un nouveau chemin avec Nox."),
+    ]:
+        user_id = f"user_friend_demo_{name.lower()}"
+        email = f"{name.lower()}.demo@example.com"
+        try:
+            await db.users.update_one(
+                {"user_id": user_id},
+                {"$setOnInsert": {
+                    "user_id": user_id, "email": email, "username": f"{name} {initial}.",
+                    "password_hash": password_hash, "picture": None, "created_at": now,
+                    "social": {"first_name": name, "area": "Paris", "area_key": "paris", "bio": bio, "share_walks": False},
+                }},
+                upsert=True,
+            )
+        except DuplicateKeyError:
+            logger.warning("Demo account skipped because its email is already in use: %s", email)
+
+
 async def seed_data():
     version_doc = await db.config.find_one({"key": "seed_version"})
     current_version = version_doc["value"] if version_doc else 0
@@ -954,6 +987,7 @@ async def on_startup():
     await db.walks.create_index("id", unique=True)
     await db.friendships.create_index("members")
     await db.users.create_index("social.area_key", sparse=True)
+    await seed_friend_accounts()
     await seed_data()
 
 
