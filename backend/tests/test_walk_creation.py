@@ -19,12 +19,44 @@ class Collection:
         self.documents.append(copy.deepcopy(document))
 
     async def find_one(self, query, projection=None):
-        return next((item for item in self.documents if all(item.get(key) == value for key, value in query.items())), None)
+        return next((item for item in self.documents if self.matches(item, query)), None)
+
+    @staticmethod
+    def matches(item, query):
+        for key, value in query.items():
+            if key == '$or':
+                if not any(Collection.matches(item, option) for option in value):
+                    return False
+            elif isinstance(value, dict) and '$exists' in value:
+                if (key in item) != value['$exists']:
+                    return False
+            elif isinstance(value, dict) and '$ne' in value:
+                if item.get(key) == value['$ne']:
+                    return False
+            elif item.get(key) != value:
+                return False
+        return True
+
+    async def update_one(self, query, changes, upsert=False):
+        item = await self.find_one(query)
+        matched = item is not None
+        if not matched and upsert:
+            item = {**query, **changes.get('$setOnInsert', {})}
+            self.documents.append(item)
+        if item is not None:
+            item.update(copy.deepcopy(changes['$set']))
+        return SimpleNamespace(matched_count=int(matched))
+
+    async def delete_one(self, query):
+        item = await self.find_one(query)
+        if item is not None:
+            self.documents.remove(item)
 
 
 @pytest.fixture
 def api(monkeypatch):
-    database = SimpleNamespace(walks=Collection(), pois=Collection(), hazards=Collection())
+    database = SimpleNamespace(walks=Collection(), pois=Collection(), hazards=Collection(),
+                               walk_confirmations=Collection(), walk_reports=Collection())
     monkeypatch.setattr(server, 'db', database)
     server.app.dependency_overrides[server.current_user] = lambda: {'user_id': 'creator', 'username': 'Creator'}
     client = TestClient(server.app, raise_server_exceptions=True)
@@ -118,3 +150,60 @@ def test_live_event_uses_valid_coordinates_and_belongs_to_an_existing_walk(api):
     assert response.status_code == 200
     assert database.hazards.documents[0]['walk_id'] == 'walk'
     assert response.json()['description'] == 'Course locale'
+
+
+def test_edit_updates_only_the_changed_route_revision(api):
+    client, database = api
+    body = payload()
+    walk_id = client.post('/api/walks', json=body).json()['id']
+    url = f'/api/walks/{walk_id}'
+    walk = database.walks.documents[0]
+    walk['rating_count'] = 3
+    body.update(edit_revision='initial', title='Nouveau titre')
+    server.app.dependency_overrides[server.current_user] = lambda: {'user_id': 'reader', 'username': 'Reader'}
+    assert client.put(url, json=body).status_code == 403
+    server.app.dependency_overrides[server.current_user] = lambda: {'user_id': 'creator', 'username': 'Creator'}
+    assert client.put(url, json=body).status_code == 200
+    assert server.route_revisions(walk) == {'A': 'initial', 'B': 'initial'}
+    assert client.put(url, json=body).status_code == 409
+    body['edit_revision'] = walk['edit_revision']
+    body['variants'][0]['segments'][0]['coordinates'][1][0] += 0.001
+    assert client.put(url, json=body).status_code == 200
+    assert server.route_revisions(walk)['A'] == 'initial'
+    assert server.route_revisions(walk)['B'] != 'initial'
+    assert walk['rating_count'] == 3
+    assert walk['variants'][0]['hazards'][0]['type'] == 'cars'
+    assert len(database.hazards.documents) == 1
+
+
+def test_feedback_is_versioned_and_deduplicated(api):
+    client, database = api
+    walk_id = client.post('/api/walks', json=payload()).json()['id']
+    url = f'/api/walks/{walk_id}/confirm'
+    confirmation = {'variant': 'B', 'route_revision': 'initial', 'accurate': True}
+    assert client.post(url, json=confirmation).status_code == 403
+    server.app.dependency_overrides[server.current_user] = lambda: {'user_id': 'reader', 'username': 'Reader'}
+    assert client.post(url, json=confirmation).status_code == 200
+    assert client.post(url, json=confirmation).status_code == 200
+    assert len(database.walk_confirmations.documents) == 1
+    report = {**confirmation, 'accurate': False, 'change_type': 'path_inaccessible'}
+    assert client.post(url, json=report).status_code == 200
+    assert client.post(url, json=report).status_code == 200
+    assert len(database.walk_reports.documents) == 1
+    assert database.walk_confirmations.documents == []
+    database.walks.documents[0]['variants'][0]['route_revision'] = 'new'
+    assert client.post(url, json=confirmation).status_code == 409
+
+
+def test_only_configured_admin_can_hide_walk(api, monkeypatch):
+    client, database = api
+    walk_id = client.post('/api/walks', json=payload()).json()['id']
+    url = f'/api/admin/walks/{walk_id}/moderation'
+    body = {'edit_revision': 'initial', 'status': 'hidden'}
+    monkeypatch.setenv('DOGGO_ADMIN_USER_IDS', ' moderator ')
+    assert client.put(url, json=body).status_code == 403
+    server.app.dependency_overrides[server.current_user] = lambda: {'user_id': 'moderator', 'username': 'Moderator'}
+    assert client.put(url, json=body).status_code == 200
+    assert database.walks.documents[0]['moderation_status'] == 'hidden'
+    assert client.get(f'/api/walks/{walk_id}').status_code == 404
+    assert client.post(f'/api/walks/{walk_id}/confirm', json={'accurate': True}).status_code == 404

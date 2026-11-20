@@ -95,7 +95,8 @@ def social_router(get_db, current_user):
             result.append(view)
         if not presence_by_id:
             return result
-        walks = await db.walks.find({"id": {"$in": [p["walk_id"] for p in presence_by_id.values()]}},
+        walks = await db.walks.find({"id": {"$in": [p["walk_id"] for p in presence_by_id.values()]},
+                                     "moderation_status": {"$ne": "hidden"}},
                                     {"_id": 0, "id": 1, "title": 1}).to_list(None)
         titles = {walk["id"]: walk["title"] for walk in walks}
         for view in result:
@@ -135,7 +136,7 @@ def social_router(get_db, current_user):
         if not user.get("social", {}).get("share_walks"):
             return {"ok": True}
         db = get_db()
-        walk = await db.walks.find_one({"id": body.walk_id}, {"variants.name": 1})
+        walk = await db.walks.find_one({"id": body.walk_id, "moderation_status": {"$ne": "hidden"}}, {"variants.name": 1})
         if not walk or (body.variant != "A" and not any(v["name"] == body.variant for v in walk.get("variants", []))):
             raise HTTPException(404, "Balade introuvable.")
         await db.users.update_one({"user_id": user["user_id"], "social.share_walks": True},

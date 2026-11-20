@@ -5,7 +5,7 @@ import { annotationPath, filledHazardIcons } from "../../src/maps/markerIcons";
 import * as Clipboard from "expo-clipboard";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { CaretLeft, Star, Clock, TrendUp, CheckCircle, Heart, ShareNetwork } from "phosphor-react-native";
+import { CaretLeft, Star, Clock, TrendUp, Heart, ShareNetwork } from "phosphor-react-native";
 import { colors, radius, spacing } from "../../src/theme";
 import { DoggoMap, SegmentInput } from "../../src/DoggoMap";
 import { api } from "../../src/api";
@@ -14,6 +14,7 @@ import { estimateWalkMinutes, mergeWalkNotes } from "../../src/walkDetails";
 import { featureOptions, interestOptions, dangerOptions } from '../../src/create/routeMetadata';
 import { useAuth } from "../../src/AuthContext";
 import { useFavorites } from "../../src/FavoritesContext";
+import { WalkFeedback } from "../../src/WalkFeedback";
 import { environmentLabels, difficultyLabels, freedomLabels, formatDuration, timeAgo, poiTypeLabels, hazardTypeLabels, walkColor } from "../../src/labels";
 
 export default function WalkDetail() {
@@ -30,7 +31,7 @@ export default function WalkDetail() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [hazardOpen, setHazardOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-  const [variantName, setVariantName] = useState('A');
+  const [requestedVariant, setVariantName] = useState('A');
   const [selectedSegment, setSelectedSegment] = useState<number | null>(null);
 
   const showToast = (msg: string) => {
@@ -50,10 +51,14 @@ export default function WalkDetail() {
   useFocusEffect(useCallback(() => { void load(); }, [load]));
 
   if (loading) return <View style={styles.center}><ActivityIndicator size="large" color={colors.brandPrimary} /></View>;
-  if (err || !data) return <View style={styles.center}><Text style={styles.err}>{err || "Not found"}</Text></View>;
+  if (err || !data) return <View style={styles.center}><Text style={styles.err}>{err || "Balade introuvable"}</Text>
+    <Pressable style={styles.outlineBtn} onPress={() => router.back()}><Text style={styles.outlineBtnText}>Retour</Text></Pressable></View>;
 
-  const { walk, comments, confirmations_30d } = data;
-  const variant = walk.variants?.find((v: any) => v.name === variantName);
+  const { walk, comments } = data;
+  const variant = walk.variants?.find((v: any) => v.name === requestedVariant);
+  const variantName = variant?.name ?? 'A';
+  const hidden = walk.moderation_status === 'hidden';
+  const verification = data.verification?.[variantName];
   const route = variant || walk;
   const pois = mergeWalkNotes<any>(data.pois || [], (variant?.pois || []).map((p: any, i: number) => ({ ...p, id: `variant-poi-${i}` })));
   const hazards = mergeWalkNotes<any>(data.hazards || [], (variant?.hazards || []).map((h: any, index: number) => ({ ...h, index })));
@@ -91,17 +96,6 @@ export default function WalkDetail() {
       setCommentText("");
       load();
     } catch {} finally { setPosting(false); }
-  };
-
-  const confirmAccurate = async () => {
-    if (!user) { router.push("/auth/login"); return; }
-    try { await api(`/walks/${walk.id}/confirm`, { method: "POST", body: JSON.stringify({ accurate: true }) }); }
-    catch {} finally { setConfirmOpen(false); load(); }
-  };
-  const reportChange = async (change_type: string) => {
-    if (!user) { router.push("/auth/login"); return; }
-    try { await api(`/walks/${walk.id}/confirm`, { method: "POST", body: JSON.stringify({ accurate: false, change_type }) }); }
-    catch {} finally { setConfirmOpen(false); load(); }
   };
 
   const respondToHazard = async (hz: any, action: 'confirm' | 'resolve') => {
@@ -162,6 +156,13 @@ export default function WalkDetail() {
             <Text style={styles.metaText}>{difficultyLabels[walk.difficulty]}</Text>
           </View>
           {!!walk.description && <Text style={styles.desc}>{walk.description}</Text>}
+          {hidden && <Text style={styles.err}>Balade masquée par la modération.</Text>}
+          {walk.moderation_status === 'correction_requested' && <Text style={styles.err}>La modération a demandé une correction à l’auteur.</Text>}
+          {!!walk.moderation_note && (data.can_edit || user?.can_moderate) && <Text style={styles.desc}>{walk.moderation_note}</Text>}
+          {data.can_edit && <Pressable accessibilityRole="link" style={styles.outlineBtn}
+            onPress={() => router.push({ pathname: '/edit-walk/[id]', params: { id: walk.id } })}>
+            <Text style={styles.outlineBtnText}>Modifier la balade</Text>
+          </Pressable>}
           {!!data.has_visible_dog && !!walk.created_by && <Pressable accessibilityRole="link" style={styles.outlineBtn} testID="walk-owner-dog"
             onPress={() => router.push({ pathname: '/member-dog/[id]', params: { id: walk.created_by } })}>
             <Text style={styles.outlineBtnText}>Voir le chien de {walk.creator_name || 'l’auteur'}</Text>
@@ -178,12 +179,12 @@ export default function WalkDetail() {
           {[{ name: 'A', distance_km: walk.distance_km }, ...walk.variants].map((v: any) => <Pressable key={v.name} testID={`view-variant-${v.name}`} style={[styles.outlineBtn, variantName === v.name && { backgroundColor: colors.surfaceTertiary }]}
             onPress={() => { setVariantName(v.name); setSelectedSegment(null); }}><Text style={styles.outlineBtnText}>{v.name} · {v.distance_km} km</Text></Pressable>)}
         </View></View>}
-        <View style={[styles.section, { paddingTop: spacing.md }]}>
+        {!hidden && <View style={[styles.section, { paddingTop: spacing.md }]}>
           <Pressable testID="start-walk-navigation" accessibilityRole="button" style={styles.sheetBtnPrimary}
             onPress={() => router.push({ pathname: '/navigate/[id]', params: { id: walk.id, variant: variantName } })}>
             <Text style={styles.sheetBtnPrimaryText}>Démarrer la balade{walk.variants?.length ? ` · ${variantName}` : ''}</Text>
           </Pressable>
-        </View>
+        </View>}
         <View style={styles.mapWrap}>
           <DoggoMap testID="walk-detail-map" initialRegion={region} segments={segments} markers={markers} fitToRoute fitRevision={variantName.charCodeAt(0)}
             onSegmentPress={index => setSelectedSegment(index)} selectedSegmentIndex={selectedSegment ?? undefined} style={{ flex: 1 }} />
@@ -203,16 +204,20 @@ export default function WalkDetail() {
         <View style={styles.section}>
           <View style={styles.confirmCard} testID="confirm-card">
             <View style={{ flex: 1 }}>
-              <Text style={styles.confirmTitle}>Last verified {timeAgo(walk.last_verified_at)}</Text>
-              <Text style={styles.confirmSub}>{confirmations_30d} community confirmations in the last 30 days</Text>
+              <Text style={styles.confirmTitle}>Fiabilité du parcours · {variantName}</Text>
+              <Text style={styles.confirmSub}>{verification?.last_confirmed_at
+                ? `Dernière confirmation le ${new Date(verification.last_confirmed_at).toLocaleDateString('fr-FR')}`
+                : 'Aucune confirmation pour cette version'}</Text>
+              <Text style={styles.confirmSub}>{verification?.people_30d ?? 0} marcheur{verification?.people_30d > 1 ? 's' : ''} sur les 30 derniers jours</Text>
+              {data.reported_variants?.includes(variantName) && <Text style={styles.err}>Un problème a été signalé sur ce parcours.</Text>}
             </View>
-            <Pressable testID="open-confirm" style={styles.outlineBtn} onPress={() => setConfirmOpen(true)}>
-              <Text style={styles.outlineBtnText}>Confirm</Text>
-            </Pressable>
+            {!hidden && <Pressable testID="open-confirm" style={styles.outlineBtn} onPress={() => user ? setConfirmOpen(true) : router.push("/auth/login")}>
+              <Text style={styles.outlineBtnText}>{data.can_edit ? 'Signaler' : 'Donner un retour'}</Text>
+            </Pressable>}
           </View>
         </View>
 
-        <SectionHeader title="Rate this walk" />
+        <SectionHeader title="Noter la balade" />
         <View style={styles.ratingBar}>
           {[1, 2, 3, 4, 5].map((n) => (
             <Pressable key={n} testID={`rate-${n}`} onPress={() => rate(n)}>
@@ -282,7 +287,10 @@ export default function WalkDetail() {
         </View>
       </ScrollView>
 
-      <ConfirmModal open={confirmOpen} onClose={() => setConfirmOpen(false)} onAccurate={confirmAccurate} onChange={reportChange} />
+      {confirmOpen && !hidden && <WalkFeedback walkId={walk.id} variant={variantName} revision={route.route_revision ?? 'initial'} canConfirm={!data.can_edit}
+        onClose={() => setConfirmOpen(false)} onDone={accurate => {
+          setConfirmOpen(false); showToast(accurate ? 'Parcours confirmé.' : 'Signalement transmis.'); void load();
+        }} />}
       <AddHazardModal open={hazardOpen} onClose={() => setHazardOpen(false)} walkId={walk.id} centerLat={walk.start_lat} centerLng={walk.start_lng} onDone={load} />
       {toast && (
         <View pointerEvents="none" style={[styles.toast, { bottom: insets.bottom + spacing.xl }]} testID="share-toast">
@@ -328,36 +336,6 @@ function SectionHeader({ title, action }: any) {
       <Text style={styles.sectionTitle}>{title}</Text>
       {action && <Pressable testID={action.testID} onPress={action.onPress}><Text style={styles.actionText}>{action.label}</Text></Pressable>}
     </View>
-  );
-}
-
-function ConfirmModal({ open, onClose, onAccurate, onChange }: any) {
-  const insets = useSafeAreaInsets();
-  return (
-    <Modal transparent visible={open} animationType="slide" onRequestClose={onClose}>
-      <View style={styles.backdrop}>
-        <View style={[styles.sheet, { paddingBottom: insets.bottom + spacing.lg }]}>
-          <Text style={styles.sheetTitle}>Is this walk information still accurate?</Text>
-          <Pressable testID="confirm-accurate" style={styles.sheetBtnPrimary} onPress={onAccurate}>
-            <CheckCircle size={20} color="#fff" weight="fill" /><Text style={styles.sheetBtnPrimaryText}>Yes, everything looks correct</Text>
-          </Pressable>
-          <Text style={styles.sheetSectionLabel}>Something changed:</Text>
-          {[
-            ["new_hazard", "New hazard"],
-            ["path_inaccessible", "Path inaccessible"],
-            ["rules_changed", "Rules changed"],
-            ["hazard_disappeared", "Hazard disappeared"],
-            ["new_poi", "New useful point"],
-            ["other", "Other"],
-          ].map(([key, label]) => (
-            <Pressable key={key} testID={`change-${key}`} style={styles.sheetBtnGhost} onPress={() => onChange(key)}>
-              <Text style={styles.sheetBtnGhostText}>{label}</Text>
-            </Pressable>
-          ))}
-          <Pressable style={styles.sheetCancel} onPress={onClose}><Text style={styles.sheetCancelText}>Cancel</Text></Pressable>
-        </View>
-      </View>
-    </Modal>
   );
 }
 
@@ -462,9 +440,6 @@ const styles = StyleSheet.create({
   sheetTitle: { fontSize: 16, fontWeight: "700", color: colors.onSurface, marginBottom: spacing.sm },
   sheetBtnPrimary: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 14 },
   sheetBtnPrimaryText: { color: colors.onBrand, fontWeight: "700" },
-  sheetSectionLabel: { fontSize: 12, fontWeight: "700", color: colors.muted, textTransform: "uppercase", marginTop: spacing.sm },
-  sheetBtnGhost: { backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, paddingVertical: 12, alignItems: "center" },
-  sheetBtnGhostText: { color: colors.onSurface, fontWeight: "600" },
   sheetCancel: { alignItems: "center", paddingVertical: spacing.sm, marginTop: spacing.sm },
   sheetCancelText: { color: colors.muted, fontWeight: "600" },
   chip: { paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.pill, backgroundColor: colors.surfaceTertiary, borderWidth: 1, borderColor: colors.border },

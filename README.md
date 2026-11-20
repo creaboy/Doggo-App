@@ -90,6 +90,10 @@ Cela démarrera une instance MongoDB accessible sur `mongodb://localhost:27017`.
 
 ---
 
+#### Activer la modération des balades
+
+Dans `backend/.env`, ajoutez `DOGGO_ADMIN_USER_IDS=user_…` avec le `user_id` du compte à autoriser (disponible via `GET /api/auth/me` une fois connecté ou dans la collection MongoDB `users`). Séparez les identifiants par des virgules pour ajouter plusieurs comptes. Redémarrez le backend, puis reconnectez-vous. Le compte configuré peut traiter les signalements depuis **Profil → Modération des balades**.
+
 ### 3. Démarrer le Frontend (Expo)
 
 1. Dans un autre terminal, rendez-vous dans le dossier `frontend` :

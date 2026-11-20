@@ -13,6 +13,7 @@ from typing import List, Optional, Literal
 import uuid
 import hashlib
 import secrets
+import json
 from datetime import datetime, timezone, timedelta
 from route_geometry import validate_loop, meters
 from walking_routing import snap_points, match_points
@@ -138,6 +139,18 @@ class WalkCreate(BaseModel):
     variants: List[VariantCreate] = Field(default_factory=list, max_length=25)
 
 
+class WalkEdit(WalkCreate):
+    edit_revision: str = Field(max_length=40)
+
+
+class WalkFeedback(BaseModel):
+    accurate: bool
+    variant: str = Field(default="A", pattern=r"^[A-Z]$")
+    route_revision: Optional[str] = Field(default=None, max_length=40)
+    change_type: Optional[Literal["new_hazard", "path_inaccessible", "rules_changed", "hazard_disappeared", "new_poi", "other"]] = None
+    note: str = Field(default="", max_length=500)
+
+
 class Rating(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     walk_id: str
@@ -219,6 +232,17 @@ async def optional_user(authorization: Optional[str] = Header(None)):
         return None
 
 
+def is_admin(user):
+    ids = os.getenv("DOGGO_ADMIN_USER_IDS", "").split(",")
+    return bool(user and user["user_id"] in {value.strip() for value in ids if value.strip()})
+
+
+async def admin_user(user=Depends(current_user)):
+    if not is_admin(user):
+        raise HTTPException(403, "Accès réservé aux administrateurs.")
+    return user
+
+
 @api_router.post("/auth/register")
 async def register(inp: RegisterInput):
     existing = await db.users.find_one({"email": inp.email.lower()})
@@ -256,12 +280,13 @@ async def login(inp: LoginInput):
         "created_at": datetime.now(timezone.utc),
         "expires_at": datetime.now(timezone.utc) + timedelta(days=7),
     })
-    return {"session_token": token, "user": {"user_id": user["user_id"], "email": user["email"], "username": user["username"], "picture": user.get("picture")}}
+    return {"session_token": token, "user": {"user_id": user["user_id"], "email": user["email"], "username": user["username"],
+                                             "picture": user.get("picture"), "can_moderate": is_admin(user)}}
 
 
 @api_router.get("/auth/me")
 async def me(user=Depends(current_user)):
-    return user
+    return {**user, "can_moderate": is_admin(user)}
 
 
 @api_router.post("/auth/logout")
@@ -273,6 +298,28 @@ async def logout(authorization: Optional[str] = Header(None)):
 
 
 # ============ Walks ============
+
+def route_revisions(walk):
+    return {"A": walk.get("route_revision", "initial"),
+            **{v["name"]: v.get("route_revision", "initial") for v in walk.get("variants", [])}}
+
+
+def current_confirmation_stages():
+    # Match the revision of the exact loop, including older routes without a revision field.
+    matching_variants = {"$filter": {"input": {"$ifNull": ["$walk.variants", []]}, "as": "variant",
+                                     "cond": {"$eq": ["$$variant.name", "$variant"]}}}
+    variant_revision = {"$arrayElemAt": [{"$map": {"input": matching_variants, "as": "route",
+                                                  "in": {"$ifNull": ["$$route.route_revision", "initial"]}}}, 0]}
+    return [
+        {"$lookup": {"from": "walks", "localField": "walk_id", "foreignField": "id", "as": "walk",
+                     "pipeline": [{"$project": {"_id": 0, "moderation_status": 1, "route_revision": 1,
+                                                "variants.name": 1, "variants.route_revision": 1}}]}},
+        {"$unwind": "$walk"},
+        {"$match": {"walk.moderation_status": {"$ne": "hidden"}, "$expr": {"$eq": ["$route_revision", {
+            "$cond": [{"$eq": ["$variant", "A"]}, {"$ifNull": ["$walk.route_revision", "initial"]}, variant_revision],
+        }]}}},
+    ]
+
 
 def clean(d: dict) -> dict:
     d.pop("_id", None)
@@ -289,7 +336,7 @@ async def list_walks(
     difficulty: Optional[str] = None,
     dog_freedom: Optional[str] = None,
 ):
-    q: dict = {"rating_avg": {"$gte": min_rating}}
+    q: dict = {"rating_avg": {"$gte": min_rating}, "moderation_status": {"$ne": "hidden"}}
     if max_duration:
         q["duration_min"] = {"$lte": max_duration}
     if environment and environment != "all":
@@ -305,29 +352,49 @@ async def list_walks(
         dist["$lte"] = max_distance
     if dist:
         q["distance_km"] = dist
-    walks = await db.walks.find(q, {"_id": 0}).to_list(500)
+    walks = await db.walks.find(q, {"_id": 0, "moderation_note": 0}).to_list(500)
+    if walks:
+        latest = await db.walk_confirmations.aggregate([
+            {"$match": {"accurate": True, "route_revision": {"$exists": True}, "walk_id": {"$in": [walk["id"] for walk in walks]}}},
+            *current_confirmation_stages(),
+            {"$group": {"_id": "$walk_id", "latest": {"$max": "$created_at"}}},
+        ]).to_list(len(walks))
+        by_walk = {row["_id"]: row["latest"] for row in latest}
+        for walk in walks:
+            walk["last_verified_at"] = by_walk.get(walk["id"])
     return walks
 
 
 @api_router.get("/walks/{walk_id}")
 async def get_walk(walk_id: str, user=Depends(optional_user)):
     walk = await db.walks.find_one({"id": walk_id}, {"_id": 0})
-    if not walk:
+    if not walk or (walk.get("moderation_status") == "hidden"
+                    and not (user and (walk.get("created_by") == user["user_id"] or is_admin(user)))):
         raise HTTPException(status_code=404, detail="Walk not found")
     creator = walk.get("created_by")
+    if not user or (creator != user["user_id"] and not is_admin(user)):
+        walk.pop("moderation_note", None)
     has_visible_dog = bool(user and creator and await db.dog_profiles.find_one({"_id": creator, "visible": True}, {"_id": 1}))
     pois = await db.pois.find({"walk_id": walk_id}, {"_id": 0}).to_list(200)
     hazards = await db.hazards.find({"walk_id": walk_id}, {"_id": 0}).to_list(200)
     comments = await db.comments.find({"walk_id": walk_id}, {"_id": 0}).sort("created_at", -1).to_list(200)
-    confirmations_30d = await db.walk_confirmations.count_documents({
-        "walk_id": walk_id,
-        "created_at": {"$gte": datetime.now(timezone.utc) - timedelta(days=30)},
-    })
+    routes = [{"variant": name, "route_revision": revision} for name, revision in route_revisions(walk).items()]
+    since = datetime.now(timezone.utc) - timedelta(days=30)
+    counts = await db.walk_confirmations.aggregate([
+        {"$match": {"walk_id": walk_id, "accurate": True, "$or": routes}},
+        {"$group": {"_id": {"variant": "$variant", "user": "$user_id"}, "latest": {"$max": "$created_at"}}},
+        {"$group": {"_id": "$_id.variant", "latest": {"$max": "$latest"},
+                    "people_30d": {"$sum": {"$cond": [{"$gte": ["$latest", since]}, 1, 0]}}}},
+    ]).to_list(26)
+    verification = {row["_id"]: {"last_confirmed_at": row["latest"], "people_30d": row["people_30d"]} for row in counts}
+    reported = await db.walk_reports.distinct("variant", {"walk_id": walk_id, "status": "open", "$or": routes})
     favorited = False
     if user:
         fav = await db.favorites.find_one({"user_id": user["user_id"], "walk_id": walk_id})
         favorited = fav is not None
-    return {"walk": walk, "pois": pois, "hazards": hazards, "comments": comments, "confirmations_30d": confirmations_30d,
+    return {"walk": walk, "pois": pois, "hazards": hazards, "comments": comments,
+            "confirmations_30d": verification.get("A", {}).get("people_30d", 0), "verification": verification,
+            "reported_variants": reported, "can_edit": bool(user and creator == user["user_id"]),
             "favorited": favorited, "has_visible_dog": has_visible_dog}
 
 
@@ -401,8 +468,7 @@ def _compute_off_leash_pct(segments: List[RouteSegment]) -> int:
     return int(round((free / total) * 100))
 
 
-@api_router.post("/walks")
-async def create_walk(inp: WalkCreate, user=Depends(current_user)):
+def prepare_walk(inp: WalkCreate, user):
     if not inp.title.strip() or inp.duration_min < 1:
         raise HTTPException(422, "Un titre et une durée positive sont requis.")
     try:
@@ -438,6 +504,12 @@ async def create_walk(inp: WalkCreate, user=Depends(current_user)):
         created_by=user["user_id"],
         creator_name=user["username"],
     )
+    return walk
+
+
+@api_router.post("/walks")
+async def create_walk(inp: WalkCreate, user=Depends(current_user)):
+    walk = prepare_walk(inp, user)
     d = walk.model_dump()
     await db.walks.insert_one(d)
     # insert POIs / hazards
@@ -451,6 +523,52 @@ async def create_walk(inp: WalkCreate, user=Depends(current_user)):
     return clean(d)
 
 
+def update_route_revision(prior, updated, rules_changed):
+    segments = [RouteSegment.model_validate(segment).model_dump() for segment in prior.get("segments", [])]
+    if rules_changed or segments != updated["segments"]:
+        updated["route_revision"] = uuid.uuid4().hex
+    elif "route_revision" in prior:
+        updated["route_revision"] = prior["route_revision"]
+
+
+def revision_filter(field, revision):
+    if revision != "initial":
+        return {field: revision}
+    return {"$or": [{field: revision}, {field: {"$exists": False}}]}
+
+
+@api_router.put("/walks/{walk_id}")
+async def edit_walk(walk_id: str, inp: WalkEdit, user=Depends(current_user)):
+    existing = await db.walks.find_one({"id": walk_id})
+    if not existing:
+        raise HTTPException(404, "Balade introuvable.")
+    if existing.get("created_by") != user["user_id"]:
+        raise HTTPException(403, "Seul l’auteur peut modifier cette balade.")
+    updates = prepare_walk(inp, user).model_dump(exclude={
+        "id", "created_by", "creator_name", "created_at", "rating_avg", "rating_count", "last_verified_at",
+    })
+    previous_segment_features = {feature for segment in existing.get("segments", []) for feature in segment.get("features", [])}
+    updates["features"] = list(dict.fromkeys([
+        *updates["features"], *(feature for feature in existing.get("features", []) if feature not in previous_segment_features),
+    ]))
+    old_variants = {variant["name"]: variant for variant in existing.get("variants", [])}
+    rules_changed = existing.get("dog_freedom", "free") != updates["dog_freedom"]
+    update_route_revision(existing, updates, rules_changed)
+    for variant in updates["variants"]:
+        prior = old_variants.get(variant["name"], {})
+        variant["pois"] = prior.get("pois", [])
+        variant["hazards"] = prior.get("hazards", [])
+        update_route_revision(prior, variant, rules_changed)
+    updates["edit_revision"] = uuid.uuid4().hex
+    result = await db.walks.update_one(
+        {"id": walk_id, "created_by": user["user_id"], **revision_filter("edit_revision", inp.edit_revision)},
+        {"$set": updates},
+    )
+    if not result.matched_count:
+        raise HTTPException(409, "La balade a changé depuis l’ouverture de cette fiche. Rouvrez-la pour repartir de la dernière version.")
+    return {"id": walk_id}
+
+
 # ============ Ratings ============
 
 @api_router.post("/walks/{walk_id}/rate")
@@ -458,7 +576,7 @@ async def rate(walk_id: str, body: dict, user=Depends(current_user)):
     stars = int(body.get("stars", 0))
     if stars < 1 or stars > 5:
         raise HTTPException(status_code=400, detail="Invalid stars")
-    walk = await db.walks.find_one({"id": walk_id})
+    walk = await db.walks.find_one({"id": walk_id, "moderation_status": {"$ne": "hidden"}})
     if not walk:
         raise HTTPException(status_code=404, detail="Walk not found")
     await db.ratings.update_one(
@@ -482,8 +600,14 @@ async def rate(walk_id: str, body: dict, user=Depends(current_user)):
 
 # ============ Comments ============
 
+async def require_visible_walk(walk_id):
+    if not await db.walks.find_one({"id": walk_id, "moderation_status": {"$ne": "hidden"}}, {"_id": 1}):
+        raise HTTPException(404, "Balade introuvable.")
+
+
 @api_router.post("/walks/{walk_id}/comments")
 async def add_comment(walk_id: str, body: dict, user=Depends(current_user)):
+    await require_visible_walk(walk_id)
     text = (body.get("text") or "").strip()
     if not text:
         raise HTTPException(status_code=400, detail="Empty comment")
@@ -496,8 +620,7 @@ async def add_comment(walk_id: str, body: dict, user=Depends(current_user)):
 
 @api_router.post("/walks/{walk_id}/hazards")
 async def add_hazard(walk_id: str, body: HazardInput, user=Depends(current_user)):
-    if not await db.walks.find_one({"id": walk_id}, {"_id": 1}):
-        raise HTTPException(404, "Balade introuvable")
+    await require_visible_walk(walk_id)
     h = Hazard(
         walk_id=walk_id,
         **body.model_dump(),
@@ -513,6 +636,7 @@ async def confirm_hazard(hazard_id: str, user=Depends(current_user)):
     hz = await db.hazards.find_one({"id": hazard_id})
     if not hz:
         raise HTTPException(status_code=404, detail="Not found")
+    await require_visible_walk(hz["walk_id"])
     await db.hazards.update_one({"id": hazard_id}, {
         "$inc": {"confirmations": 1},
         "$set": {"last_confirmed_at": datetime.now(timezone.utc), "status": "active"},
@@ -522,6 +646,10 @@ async def confirm_hazard(hazard_id: str, user=Depends(current_user)):
 
 @api_router.post("/hazards/{hazard_id}/resolve")
 async def resolve_hazard(hazard_id: str, user=Depends(current_user)):
+    hz = await db.hazards.find_one({"id": hazard_id}, {"walk_id": 1})
+    if not hz:
+        raise HTTPException(404, "Signalement introuvable")
+    await require_visible_walk(hz["walk_id"])
     result = await db.hazards.update_one({"id": hazard_id}, {
         "$set": {"status": "resolved", "last_confirmed_at": datetime.now(timezone.utc)},
     })
@@ -542,7 +670,8 @@ async def update_variant_hazard(walk_id: str, variant: str, index: int,
     if action == "confirm":
         changes["$inc"] = {f"{field}.confirmations": 1}
     result = await db.walks.update_one(
-        {"id": walk_id, "variants": {"$elemMatch": {"name": variant, f"hazards.{index}.type": {"$exists": True}}}},
+        {"id": walk_id, "moderation_status": {"$ne": "hidden"},
+         "variants": {"$elemMatch": {"name": variant, f"hazards.{index}.type": {"$exists": True}}}},
         changes,
     )
     if not result.matched_count:
@@ -554,6 +683,7 @@ async def update_variant_hazard(walk_id: str, variant: str, index: int,
 
 @api_router.post("/walks/{walk_id}/pois")
 async def add_poi(walk_id: str, body: dict, user=Depends(current_user)):
+    await require_visible_walk(walk_id)
     p = PointOfInterest(
         walk_id=walk_id, type=body["type"], lat=body["lat"], lng=body["lng"],
         description=body.get("description", ""), created_by=user["user_id"],
@@ -565,16 +695,69 @@ async def add_poi(walk_id: str, body: dict, user=Depends(current_user)):
 # ============ Walk confirmation ============
 
 @api_router.post("/walks/{walk_id}/confirm")
-async def confirm_walk(walk_id: str, body: dict, user=Depends(current_user)):
-    accurate = bool(body.get("accurate", True))
-    wc = WalkConfirmation(
-        walk_id=walk_id, user_id=user["user_id"], accurate=accurate,
-        change_type=body.get("change_type"), note=body.get("note", ""),
-    )
-    await db.walk_confirmations.insert_one(wc.model_dump())
-    if accurate:
-        await db.walks.update_one({"id": walk_id}, {"$set": {"last_verified_at": datetime.now(timezone.utc)}})
-    return clean(wc.model_dump())
+async def confirm_walk(walk_id: str, body: WalkFeedback, user=Depends(current_user)):
+    walk = await db.walks.find_one({"id": walk_id, "moderation_status": {"$ne": "hidden"}})
+    revision = route_revisions(walk).get(body.variant) if walk else None
+    if revision is None:
+        raise HTTPException(404, "Itinéraire introuvable.")
+    if body.route_revision != revision and (body.route_revision is not None or revision != "initial"):
+        raise HTTPException(409, "Le parcours a été modifié. Rouvrez la balade pour vérifier la nouvelle version.")
+    identity = json.dumps([walk_id, revision, body.variant, user["user_id"]])
+    fields = {"walk_id": walk_id, "variant": body.variant, "route_revision": revision, "user_id": user["user_id"]}
+    now = datetime.now(timezone.utc)
+    if body.accurate and user["user_id"] == walk.get("created_by"):
+        raise HTTPException(403, "Les confirmations sont réservées aux autres marcheurs.")
+    if body.accurate:
+        await db.walk_confirmations.update_one({"_id": identity}, {
+            "$set": {**fields, "accurate": True, "created_at": now},
+            "$setOnInsert": {"id": uuid.uuid4().hex},
+        }, upsert=True)
+    else:
+        reason = body.change_type or "other"
+        await db.walk_reports.update_one({"_id": json.dumps([identity, reason])}, {
+            "$set": {**fields, "change_type": reason, "note": body.note.strip(), "reported_at": now, "status": "open"},
+            "$setOnInsert": {"id": uuid.uuid4().hex},
+        }, upsert=True)
+        await db.walk_confirmations.delete_one({"_id": identity})
+    return {"ok": True}
+
+
+@api_router.get("/admin/walk-reports")
+async def walk_reports(user=Depends(admin_user)):
+    reports = await db.walk_reports.find({"status": "open"}, {"_id": 0, "user_id": 0}).sort("reported_at", -1).to_list(200)
+    fields = {"_id": 0, "id": 1, "title": 1, "edit_revision": 1, "route_revision": 1,
+              "moderation_status": 1, "moderation_note": 1, "variants.name": 1, "variants.route_revision": 1}
+    moderated = await db.walks.find({"moderation_status": {"$in": ["correction_requested", "hidden"]}},
+                                    fields).to_list(200)
+    reported = await db.walks.find({"id": {"$in": [item["walk_id"] for item in reports]}},
+                                    fields).to_list(200)
+    return {"reports": reports, "walks": list({walk["id"]: walk for walk in [*moderated, *reported]}.values())}
+
+
+class ModerationAction(BaseModel):
+    status: Literal["published", "correction_requested", "hidden"]
+    edit_revision: str = Field(max_length=40)
+    note: str = Field(default="", max_length=500)
+
+
+@api_router.put("/admin/walks/{walk_id}/moderation")
+async def moderate_walk(walk_id: str, body: ModerationAction, user=Depends(admin_user)):
+    if body.status == "correction_requested" and not body.note.strip():
+        raise HTTPException(422, "Précisez la correction à apporter.")
+    result = await db.walks.update_one({"id": walk_id, **revision_filter("edit_revision", body.edit_revision)},
+                                       {"$set": {"moderation_status": body.status, "edit_revision": uuid.uuid4().hex,
+                                                 "moderation_note": "" if body.status == "published" else body.note.strip()}})
+    if not result.matched_count:
+        raise HTTPException(409, "La balade a changé. Rechargez les signalements.")
+    return {"ok": True}
+
+
+@api_router.post("/admin/walk-reports/{report_id}/dismiss")
+async def dismiss_walk_report(report_id: str, user=Depends(admin_user)):
+    result = await db.walk_reports.update_one({"id": report_id, "status": "open"}, {"$set": {"status": "closed"}})
+    if not result.matched_count:
+        raise HTTPException(404, "Signalement introuvable.")
+    return {"ok": True}
 
 
 # ============ Profile ============
@@ -596,9 +779,7 @@ async def my_activity(user=Depends(current_user)):
 
 @api_router.post("/walks/{walk_id}/favorite")
 async def add_favorite(walk_id: str, user=Depends(current_user)):
-    walk = await db.walks.find_one({"id": walk_id})
-    if not walk:
-        raise HTTPException(status_code=404, detail="Walk not found")
+    await require_visible_walk(walk_id)
     await db.favorites.update_one(
         {"user_id": user["user_id"], "walk_id": walk_id},
         {"$set": {"user_id": user["user_id"], "walk_id": walk_id, "created_at": datetime.now(timezone.utc)}},
@@ -619,7 +800,7 @@ async def list_favorites(user=Depends(current_user)):
     ids = [f["walk_id"] for f in favs]
     if not ids:
         return []
-    walks = await db.walks.find({"id": {"$in": ids}}, {"_id": 0}).to_list(500)
+    walks = await db.walks.find({"id": {"$in": ids}, "moderation_status": {"$ne": "hidden"}}, {"_id": 0, "moderation_note": 0}).to_list(500)
     # preserve favorite order
     by_id = {w["id"]: w for w in walks}
     return [by_id[i] for i in ids if i in by_id]
@@ -636,8 +817,9 @@ async def favorites_hazards(user=Depends(current_user)):
         {"_id": 0},
     ).to_list(2000)
     # attach walk title
-    walks = await db.walks.find({"id": {"$in": ids}}, {"_id": 0, "id": 1, "title": 1}).to_list(500)
+    walks = await db.walks.find({"id": {"$in": ids}, "moderation_status": {"$ne": "hidden"}}, {"_id": 0, "id": 1, "title": 1}).to_list(500)
     title_by_id = {w["id"]: w["title"] for w in walks}
+    hazards = [hazard for hazard in hazards if hazard["walk_id"] in title_by_id]
     for h in hazards:
         h["walk_title"] = title_by_id.get(h["walk_id"], "")
     return hazards
@@ -658,7 +840,8 @@ def _haversine_km(lat1, lng1, lat2, lng2):
 async def weekly_digest(lat: Optional[float] = None, lng: Optional[float] = None, radius_km: float = 50.0):
     since = datetime.now(timezone.utc) - timedelta(days=7)
     # New walks this week
-    new_walks = await db.walks.find({"created_at": {"$gte": since}}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    new_walks = await db.walks.find({"created_at": {"$gte": since}, "moderation_status": {"$ne": "hidden"}},
+                                    {"_id": 0, "moderation_note": 0}).sort("created_at", -1).to_list(500)
     if lat is not None and lng is not None:
         new_walks = [w for w in new_walks if _haversine_km(lat, lng, w["start_lat"], w["start_lng"]) <= radius_km]
         for w in new_walks:
@@ -671,8 +854,9 @@ async def weekly_digest(lat: Optional[float] = None, lng: Optional[float] = None
         {"_id": 0},
     ).sort("last_confirmed_at", -1).to_list(200)
     walk_ids = list({h["walk_id"] for h in recent_hazards})
-    walks = await db.walks.find({"id": {"$in": walk_ids}}, {"_id": 0, "id": 1, "title": 1, "start_lat": 1, "start_lng": 1}).to_list(500)
+    walks = await db.walks.find({"id": {"$in": walk_ids}, "moderation_status": {"$ne": "hidden"}}, {"_id": 0, "id": 1, "title": 1, "start_lat": 1, "start_lng": 1}).to_list(500)
     title_by = {w["id"]: w for w in walks}
+    recent_hazards = [hazard for hazard in recent_hazards if hazard["walk_id"] in title_by]
     for h in recent_hazards:
         w = title_by.get(h["walk_id"], {})
         h["walk_title"] = w.get("title", "")
@@ -684,14 +868,17 @@ async def weekly_digest(lat: Optional[float] = None, lng: Optional[float] = None
 
     # Walk confirmations this week — count per walk
     conf_cursor = db.walk_confirmations.aggregate([
-        {"$match": {"created_at": {"$gte": since}, "accurate": True}},
-        {"$group": {"_id": "$walk_id", "count": {"$sum": 1}, "last": {"$max": "$created_at"}}},
+        {"$match": {"created_at": {"$gte": since}, "accurate": True, "route_revision": {"$exists": True}}},
+        *current_confirmation_stages(),
+        {"$group": {"_id": {"walk": "$walk_id", "member": "$user_id"}, "last": {"$max": "$created_at"}}},
+        {"$group": {"_id": "$_id.walk", "count": {"$sum": 1}, "last": {"$max": "$last"}}},
         {"$sort": {"count": -1}},
         {"$limit": 20},
     ])
     conf_groups = await conf_cursor.to_list(50)
     conf_walk_ids = [c["_id"] for c in conf_groups]
-    conf_walks = await db.walks.find({"id": {"$in": conf_walk_ids}}, {"_id": 0}).to_list(50)
+    conf_walks = await db.walks.find({"id": {"$in": conf_walk_ids}, "moderation_status": {"$ne": "hidden"}},
+                                     {"_id": 0, "title": 1, "id": 1, "environment": 1, "start_lat": 1, "start_lng": 1}).to_list(50)
     conf_by = {w["id"]: w for w in conf_walks}
     confirmations = []
     for c in conf_groups:
@@ -986,6 +1173,9 @@ async def on_startup():
     await db.users.create_index("user_id", unique=True)
     await db.user_sessions.create_index("session_token", unique=True)
     await db.walks.create_index("id", unique=True)
+    await db.walk_confirmations.create_index([("walk_id", 1), ("route_revision", 1), ("accurate", 1)])
+    await db.walk_reports.create_index([("walk_id", 1), ("route_revision", 1), ("status", 1)])
+    await db.walk_reports.create_index([("status", 1), ("reported_at", -1)])
     await db.friendships.create_index("members")
     await db.users.create_index("social.area_key", sparse=True)
     await seed_friend_accounts()

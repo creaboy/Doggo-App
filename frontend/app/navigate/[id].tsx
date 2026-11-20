@@ -17,15 +17,19 @@ import type { RouteNote } from '../../src/create/routeMetadata';
 import { colors } from '../../src/theme';
 import { useWalkPresence } from '../../src/social';
 import { mergeWalkNotes } from '../../src/walkDetails';
+import { WalkFeedback } from '../../src/WalkFeedback';
 
 type Report = { id?: string; type: string; lat: number; lng: number; description?: string; status?: 'active' | 'resolved'; index?: number };
 type SavedRoute = {
+  route_revision?: string;
   segments: { coordinates: [number, number][]; freedom: SegmentInput['freedom']; off_path?: boolean }[];
   hazards?: Report[];
   pois?: Report[];
 };
 type WalkData = {
-  walk: SavedRoute & { id: string; title: string; environment: string; dog_freedom: string; variants?: (SavedRoute & { name: string })[] };
+  walk: SavedRoute & { id: string; title: string; environment: string; dog_freedom: string;
+    moderation_status?: string; variants?: (SavedRoute & { name: string })[] };
+  can_edit: boolean;
   hazards: Report[];
   pois: Report[];
 };
@@ -56,6 +60,8 @@ function WalkNavigation({ id, variant }: { id: string; variant: string }) {
   const [feedback, setFeedback] = useState('');
   const [reportError, setReportError] = useState('');
   const [stopOpen, setStopOpen] = useState(false);
+  const [walkFeedbackOpen, setWalkFeedbackOpen] = useState(false);
+  const [walkFeedbackSent, setWalkFeedbackSent] = useState(false);
   const saving = useRef(false);
   const reportRevision = useRef(0);
 
@@ -63,11 +69,14 @@ function WalkNavigation({ id, variant }: { id: string; variant: string }) {
     const selected = result.walk.variants?.find(route => route.name === variant);
     return mergeWalkNotes(result.hazards || [], (selected?.hazards || []).map((report, index) => ({ ...report, index })));
   }, [variant]);
+  const selected = data?.walk.variants?.find(route => route.name === variant);
+  const saved = variant === 'A' ? data?.walk : selected;
 
   useEffect(() => {
     let active = true;
     void api(`/walks/${encodeURIComponent(id)}`).then((result: WalkData) => {
       if (!active) return;
+      if (result.walk.moderation_status === 'hidden') { setLoadError('Cette balade a été masquée.'); return; }
       setData(result);
       setReports(mergeReports(result));
     }).catch(error => { if (active) setLoadError(error.message); });
@@ -81,14 +90,13 @@ function WalkNavigation({ id, variant }: { id: string; variant: string }) {
       const revision = reportRevision.current;
       try {
         const result: WalkData = await api(`/walks/${encodeURIComponent(id)}`);
-        if (active && !saving.current && revision === reportRevision.current) setReports(mergeReports(result));
+        const current = variant === 'A' ? result.walk : result.walk.variants?.find(route => route.name === variant);
+        if (active && current && current.route_revision === saved?.route_revision && !saving.current && revision === reportRevision.current) setReports(mergeReports(result));
       } catch { /* Keep the last known reports when reception drops. */ }
     }, 30000);
     return () => { active = false; clearInterval(interval); };
-  }, [data, id, mergeReports, progress.arrived]);
+  }, [data, id, mergeReports, progress.arrived, saved, variant]);
 
-  const selected = data?.walk.variants?.find(route => route.name === variant);
-  const saved = variant === 'A' ? data?.walk : selected;
   const segments = useMemo<SegmentInput[]>(() => (saved?.segments || []).map(segment => ({
     freedom: segment.freedom, offPath: segment.off_path,
     coordinates: segment.coordinates.map(([latitude, longitude]) => ({ latitude, longitude })),
@@ -230,6 +238,9 @@ function WalkNavigation({ id, variant }: { id: string; variant: string }) {
       <Text style={styles.text} testID="navigation-progress">{formatMeters(remaining)} restant · {Math.round(progress.along / route.total * 100)} %</Text>
       {canResumeHere && <Button label="Reprendre le guidage ici"
         onPress={() => setProgress({ started: true, along: laterMatch.along, offRoute: false, arrived: false })} />}
+      {progress.arrived && !walkFeedbackSent && <View style={styles.row}>
+        <Button label={data.can_edit ? 'Signaler un problème' : 'Le parcours était-il conforme ?'} onPress={() => setWalkFeedbackOpen(true)} />
+      </View>}
       <View style={styles.row}>
         {progress.arrived ? <Button label="Fermer" onPress={() => router.back()} /> : <>
           <Button label={follow ? 'Vue d’ensemble' : 'Suivre le GPS'} onPress={() => { setFollow(!follow); setView(value => value + 1); }} />
@@ -240,6 +251,10 @@ function WalkNavigation({ id, variant }: { id: string; variant: string }) {
     </View>
     {note && <AnnotationEditor note={note} onClose={() => { if (!saving.current) setNote(undefined); }}
       onSave={submitReport} disabled={busy} liveReport error={reportError} />}
+    {walkFeedbackOpen && <WalkFeedback walkId={id} variant={variant} revision={saved?.route_revision ?? 'initial'}
+      canConfirm={!data.can_edit} onClose={() => setWalkFeedbackOpen(false)} onDone={accurate => {
+        setWalkFeedbackOpen(false); setWalkFeedbackSent(true); setFeedback(accurate ? 'Parcours confirmé.' : 'Signalement transmis.');
+      }} />}
   </View>;
 }
 

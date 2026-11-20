@@ -12,8 +12,8 @@ import { splitLeg, moveVertex } from './segmentEditing';
 import { serializeNotes, serializeSegments, serializeVariant } from './create/routeMetadata';
 import type { RouteNote, SegmentDetails, RouteVariant } from './create/routeMetadata';
 
-export function useWalkCreation() {
-  const [draft, setDraft] = useState<Draft>(emptyDraft);
+export function useWalkCreation(initialDraft?: Draft) {
+  const [draft, setDraft] = useState<Draft>(() => initialDraft ?? emptyDraft());
   const [annotations, setAnnotations] = useState<RouteNote[]>([]);
   const current = useRef(draft);
   const history = useRef<Draft[]>([]);
@@ -199,16 +199,17 @@ export function useWalkCreation() {
       commit(next, true); setSelection(null); setNotice('Point déplacé · passages libres conservés');
     });
   };
-  const publish = async (details: object, variants?: RouteVariant[]) => {
+  const publish = async (details: object, variants?: RouteVariant[], edit?: { id: string; revision: string }) => {
     const routes = variants || [{ name: 'A', draft: current.current }];
     if (working.current || gps.busy || !preview || recorder.recording || recorder.starting || routes.some(v => !closed(v.draft) || !usable(v.draft) || v.draft.legs.some(l => !resolvedLeg(l)))) throw new Error('Fermez chaque boucle et confirmez ses éventuels passages libres avant publication.');
     const main = routes[0].draft;
     if (routes.some(v => meters(main.start!, v.draft.start!) > .01)) throw new Error('Tous les itinéraires doivent partager le départ de A. Corrigez le tracé de la variante concernée.');
     working.current = true; setBusy('Publication…'); setError('');
     try {
-      return await api('/walks', { method: 'POST', body: JSON.stringify({ ...details,
+      return await api(edit ? `/walks/${encodeURIComponent(edit.id)}` : '/walks', { method: edit ? 'PUT' : 'POST', body: JSON.stringify({ ...details,
         segments: serializeSegments(main.legs),
-        features: [...new Set(main.legs.flatMap(s => s.features || []))], ...serializeNotes(annotations),
+        features: [...new Set(main.legs.flatMap(s => s.features || []))],
+        ...(edit ? { edit_revision: edit.revision } : serializeNotes(annotations)),
         variants: routes.slice(1).map(serializeVariant),
       }) });
     } finally { working.current = false; setBusy(''); }

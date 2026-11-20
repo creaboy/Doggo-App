@@ -6,7 +6,7 @@ import { Star, MapPin, Clock, TrendUp, X, SlidersHorizontal, List as ListIcon, M
 import { colors, radius, spacing } from "../../src/theme";
 import { api } from "../../src/api";
 import { DoggoMap } from "../../src/DoggoMap";
-import { environmentLabels, difficultyLabels, freedomLabels, formatDuration, timeAgo, walkColor } from "../../src/labels";
+import { environmentLabels, difficultyLabels, freedomLabels, formatDuration, walkColor } from "../../src/labels";
 import { useFavorites } from "../../src/FavoritesContext";
 import { useAuth } from "../../src/AuthContext";
 import { useUserLocation, distanceKm } from "../../src/useUserLocation";
@@ -69,7 +69,7 @@ export default function ExploreScreen() {
     } else if (sortKey === "rating") {
       list = list.sort((a, b) => (b.rating_avg || 0) - (a.rating_avg || 0));
     } else {
-      list = list.sort((a, b) => new Date(b.last_verified_at).getTime() - new Date(a.last_verified_at).getTime());
+      list = list.sort((a, b) => (b.last_verified_at ? Date.parse(b.last_verified_at) : 0) - (a.last_verified_at ? Date.parse(a.last_verified_at) : 0));
     }
     return list;
   }, [walks, sortKey, userLoc]);
@@ -231,7 +231,7 @@ export function WalkCard({ walk, onPress }: { walk: any; onPress: () => void }) 
             <Stat icon={<TrendUp size={14} color={colors.muted} />} value={`${walk.distance_km} km`} />
             <Stat icon={<Star size={14} color={colors.warning} weight="fill" />} value={walk.rating_avg ? walk.rating_avg.toFixed(1) : "—"} extra={walk.rating_count ? `(${walk.rating_count})` : ""} />
           </View>
-          <Text style={styles.verified}>Verified {timeAgo(walk.last_verified_at)}</Text>
+          {!!walk.last_verified_at && <Text style={styles.verified}>Parcours confirmé · {new Date(walk.last_verified_at).toLocaleDateString('fr-FR')}</Text>}
         </View>
       </View>
     </Pressable>

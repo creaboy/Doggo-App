@@ -6,6 +6,7 @@ export type User = {
   email: string;
   username: string;
   picture?: string | null;
+  can_moderate?: boolean;
 };
 
 type AuthCtx = {

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useState } from "react";
 import { View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -27,15 +27,17 @@ export default function ProfileScreen() {
     return () => { active = false; };
   }, [user]));
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     if (!user) { setLoading(false); return; }
+    let active = true;
     (async () => {
       try {
         const [w, a] = await Promise.all([api("/me/walks"), api("/me/activity")]);
-        setWalks(w); setActivity(a);
-      } catch {} finally { setLoading(false); }
+        if (active) { setWalks(w); setActivity(a); }
+      } catch {} finally { if (active) setLoading(false); }
     })();
-  }, [user]);
+    return () => { active = false; };
+  }, [user]));
 
   if (!user) {
     return (
@@ -74,6 +76,10 @@ export default function ProfileScreen() {
         <Text style={[styles.name, { flex: 1 }]}>Amis</Text>
         <CaretRight size={18} color={colors.muted} />
       </Pressable>
+      {user.can_moderate && <Pressable accessibilityRole="button" style={styles.dogLink} onPress={() => router.push('/admin-reports')}>
+        <Text style={[styles.name, { flex: 1 }]}>Modération des balades</Text>
+        <CaretRight size={18} color={colors.muted} />
+      </Pressable>}
       <View style={styles.statsRow}>
         <StatBox label="Walks created" value={walks.length} />
         <StatBox label="Ratings given" value={activity?.ratings.length ?? 0} />
@@ -98,6 +104,8 @@ export default function ProfileScreen() {
               <View>
                 <Text style={styles.walkTitle}>{w.title}</Text>
                 <Text style={styles.walkSub}>{environmentLabels[w.environment]} · {formatDuration(w.duration_min)} · {w.distance_km} km</Text>
+                {w.moderation_status === 'correction_requested' && <Text style={[styles.walkSub, { color: colors.error }]}>Correction demandée</Text>}
+                {w.moderation_status === 'hidden' && <Text style={[styles.walkSub, { color: colors.error }]}>Balade masquée</Text>}
               </View>
               <View style={styles.ratingRow}><Star size={14} color={colors.warning} weight="fill" /><Text style={styles.ratingText}>{w.rating_avg || "—"}</Text></View>
             </Pressable>
