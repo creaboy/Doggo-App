@@ -487,20 +487,19 @@ test('adding a point on a segment inserts it in order and renumbers the followin
   assert.equal(draft.legs.length, 3);
 });
 
-test('segment metadata and annotations survive splitting, merging, moving and serialization of independent variants', () => {
+test('segment metadata survives editing and shared markers serialize separately from variants', () => {
   const { routeDraft, segmentEditing } = loadCore();
   const metadata = makeLoader().load(path.join(__dirname, '../src/create/routeMetadata.ts'));
   const start = { latitude: 48.85, longitude: 2.35 };
   const middle = offsetMeters(start, 80, 0), end = offsetMeters(start, 80, 80);
   const note = { id: 'n', kind: 'hazard', type: 'path_closed', coordinate: middle, description: 'Barrière' };
-  const draft = { start, annotations: [note], legs: [
+  const draft = { start, legs: [
     { id: 'a', source: 'draw', freedom: 'free', snapped: true, coordinates: [start, middle], features: ['shade'], dangers: ['cars'], notes: 'Ombre' },
     { id: 'b', source: 'draw', freedom: 'leash', snapped: true, coordinates: [middle, end], interests: ['water'], notes: 'Eau' },
     { id: 'c', source: 'draw', freedom: 'free', snapped: true, coordinates: [end, start] },
   ] };
   const split = segmentEditing.splitLeg(draft, 0, offsetMeters(start, 40, 0));
   assert.deepEqual(split.legs[1].features, ['shade']);
-  assert.deepEqual(split.annotations, [note]);
   const merged = routeDraft.removeVertex(draft, 1);
   assert.deepEqual(merged.legs[0].features, ['shade']);
   assert.deepEqual(merged.legs[0].interests, ['water']);
@@ -511,9 +510,11 @@ test('segment metadata and annotations survive splitting, merging, moving and se
   assert.equal(routeDraft.closed(moved), true);
   assert.deepEqual(draft.legs[0].coordinates.at(-1), middle, 'editing a copy cannot mutate route A');
   assert.throws(() => segmentEditing.moveVertex(draft, 0, middle));
-  const payload = metadata.serializeVariant({ name: 'B', draft: moved });
+  const payload = metadata.serializeVariant({ name: 'B', draft: moved, durationMin: 24 });
   assert.equal(payload.name, 'B');
-  assert.equal(payload.hazards[0].description, 'Barrière');
+  assert.equal(payload.duration_min, 24);
+  assert.equal(payload.hazards, undefined);
+  assert.equal(metadata.serializeNotes([note]).hazards[0].description, 'Barrière');
   assert.deepEqual(payload.segments[0].dangers, ['cars']);
 });
 
@@ -584,6 +585,18 @@ test('navigation requires the departure, identifies corners, recovers from an ex
   for (const fix of [point(100, 0), point(100, 60), point(100, 100), point(40, 100), point(0, 100), point(0, 45), start]) state = update(state, fix);
   assert.equal(state.arrived, true);
   assert.equal(state.along, route.total);
+});
+
+test('duration follows distance and terrain; legacy notes do not duplicate shared markers', () => {
+  const { estimateWalkMinutes, mergeWalkNotes } = makeLoader().load(path.join(__dirname, '../src/walkDetails.ts'));
+  assert.equal(estimateWalkMinutes(5, 'city', 'easy'), 60);
+  assert.equal(estimateWalkMinutes(10, 'city', 'easy'), 120);
+  assert.ok(estimateWalkMinutes(5, 'mountain', 'easy') > 60);
+  assert.ok(estimateWalkMinutes(5, 'city', 'sporty') > 60);
+  const shared = { id: 'p1', type: 'water', lat: 48, lng: 2, description: 'Fontaine' };
+  const legacy = { ...shared, id: 'old' };
+  const unique = { ...legacy, lng: 3 };
+  assert.deepEqual(mergeWalkNotes([shared], [legacy, unique]), [shared, unique]);
 });
 
 async function run() {

@@ -39,7 +39,7 @@ function startMap(native = false, apiKey = 'test-key') {
     const value = { kind, points, options, events: {}, addTo() { layers.push(this); return this; },
       on(event, cb) { this.events[event] = cb; return this; }, bindTooltip(label) { this.label = label; return this; },
       setLatLng(p) { this.points = p; return this; }, setStyle(options) { Object.assign(this.options, options); return this; },
-      setRadius(radius) { this.radius = radius; return this; }, bringToBack() { return this; },
+      setRadius(radius) { this.radius = radius; return this; }, bringToBack() { return this; }, bringToFront() { this.raised = true; return this; },
     };
     return value;
   }
@@ -107,6 +107,7 @@ for (const native of [false, true]) {
   const data = { basemap: 'liberty', scene: scene(), userCoordinate: { latitude: 48.85, longitude: 2.35 }, userAccuracy: 12,
     locationFocus: { id: 1, coordinate: { latitude: 48.85, longitude: 2.35 }, zoom: 17 } };
   m.window.__doggoUpdate(data);
+  assert.ok(m.layers.some(l => l.kind === 'line' && l.options.color === '#E600C8' && l.raised), 'selected segment has a bright border above other routes');
   const liberty = m.layers.find(l => l.kind === 'liberty');
   assert.equal(liberty.points, 'https://tiles.openfreemap.org/styles/liberty');
   assert.equal(liberty.options.attributionControl, false, 'use one shared compact attribution');

@@ -60,6 +60,7 @@ class HazardInput(PoiInput):
 
 class VariantCreate(BaseModel):
     name: str = Field(pattern=r"^[B-Z]$")
+    duration_min: Optional[int] = Field(default=None, ge=1)
     segments: List[RouteSegment]
     pois: List[PoiInput] = Field(default_factory=list, max_length=200)
     hazards: List[HazardInput] = Field(default_factory=list, max_length=200)

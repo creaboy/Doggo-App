@@ -46,9 +46,13 @@ def payload():
 
 def test_publish_preserves_metadata_and_variants(api):
     client, database = api
-    response = client.post('/api/walks', json=payload())
+    body = payload()
+    body['variants'][0]['duration_min'] = 42
+    response = client.post('/api/walks', json=body)
     assert response.status_code == 200, response.text
     walk = database.walks.documents[0]
+    assert walk['duration_min'] == 30
+    assert walk['variants'][0]['duration_min'] == 42
     assert walk['segments'][0]['dangers'] == ['crossing']
     assert walk['segments'][0]['notes'] == 'Traverser au passage piéton'
     assert walk['variants'][0]['name'] == 'B'

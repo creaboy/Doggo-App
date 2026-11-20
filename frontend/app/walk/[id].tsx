@@ -10,6 +10,7 @@ import { colors, radius, spacing } from "../../src/theme";
 import { DoggoMap, SegmentInput } from "../../src/DoggoMap";
 import { api } from "../../src/api";
 import { regionFor } from "../../src/routeDraft";
+import { estimateWalkMinutes, mergeWalkNotes } from "../../src/walkDetails";
 import { featureOptions, interestOptions, dangerOptions } from '../../src/create/routeMetadata';
 import { useAuth } from "../../src/AuthContext";
 import { useFavorites } from "../../src/FavoritesContext";
@@ -54,8 +55,9 @@ export default function WalkDetail() {
   const { walk, comments, confirmations_30d } = data;
   const variant = walk.variants?.find((v: any) => v.name === variantName);
   const route = variant || walk;
-  const pois = variant ? variant.pois.map((p: any, i: number) => ({ ...p, id: `variant-poi-${i}` })) : data.pois;
-  const hazards = [...(data.hazards || []), ...(variant?.hazards || []).map((h: any, index: number) => ({ ...h, index }))];
+  const pois = mergeWalkNotes<any>(data.pois || [], (variant?.pois || []).map((p: any, i: number) => ({ ...p, id: `variant-poi-${i}` })));
+  const hazards = mergeWalkNotes<any>(data.hazards || [], (variant?.hazards || []).map((h: any, index: number) => ({ ...h, index })));
+  const duration = route.duration_min ?? estimateWalkMinutes(route.distance_km, walk.environment, walk.difficulty);
 
   const segments: SegmentInput[] = route.segments.map((s: any) => ({
     freedom: s.freedom,
@@ -166,7 +168,7 @@ export default function WalkDetail() {
           </Pressable>}
 
           <View style={styles.statsGrid}>
-            <StatBox icon={<Clock size={18} color={colors.brandPrimary} />} label="Duration" value={formatDuration(walk.duration_min)} />
+            <StatBox icon={<Clock size={18} color={colors.brandPrimary} />} label={route.duration_min ? "Durée" : "Durée estimée"} value={formatDuration(duration)} />
             <StatBox icon={<TrendUp size={18} color={colors.brandPrimary} />} label="Distance" value={`${route.distance_km} km`} />
             <StatBox icon={<View style={[styles.stripe, { backgroundColor: walkColor(walk) }]} />} label={freedomLabels[walk.dog_freedom]} value={`${route.off_leash_pct}% free`} />
           </View>
@@ -175,7 +177,7 @@ export default function WalkDetail() {
         {!!walk.variants?.length && <View style={[styles.section, { gap: 8 }]}><Text style={styles.hazardTitle}>Choisir une boucle</Text><View style={styles.metaRow}>
           {[{ name: 'A', distance_km: walk.distance_km }, ...walk.variants].map((v: any) => <Pressable key={v.name} testID={`view-variant-${v.name}`} style={[styles.outlineBtn, variantName === v.name && { backgroundColor: colors.surfaceTertiary }]}
             onPress={() => { setVariantName(v.name); setSelectedSegment(null); }}><Text style={styles.outlineBtnText}>{v.name} · {v.distance_km} km</Text></Pressable>)}
-        </View><Text style={styles.metaSmall}>Durée indiquée pour l’itinéraire A.</Text></View>}
+        </View></View>}
         <View style={[styles.section, { paddingTop: spacing.md }]}>
           <Pressable testID="start-walk-navigation" accessibilityRole="button" style={styles.sheetBtnPrimary}
             onPress={() => router.push({ pathname: '/navigate/[id]', params: { id: walk.id, variant: variantName } })}>

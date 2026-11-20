@@ -1,9 +1,9 @@
 import type { LatLng, SegmentInput } from './DoggoMap';
-import type { RouteNote, SegmentDetails } from './create/routeMetadata';
+import type { SegmentDetails } from './create/routeMetadata';
 export type Freedom = SegmentInput['freedom'];
 export type GpsSample = LatLng & { timestamp: number; accuracy: number };
 export type Leg = SegmentInput & SegmentDetails & { id?: string; source: 'draw' | 'gps' | 'return'; snapped?: boolean; sealed?: boolean; gpsSamples?: GpsSample[] };
-export type Draft = { start: LatLng | null; legs: Leg[]; rawGps?: GpsSample[]; annotations?: RouteNote[] };
+export type Draft = { start: LatLng | null; legs: Leg[]; rawGps?: GpsSample[] };
 let nextId = 0;
 const sessionId = Date.now().toString(36);
 export const legId = () => `leg-${sessionId}-${++nextId}`;

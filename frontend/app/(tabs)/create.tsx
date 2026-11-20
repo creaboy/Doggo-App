@@ -17,6 +17,7 @@ import { AnnotationEditor } from '../../src/create/AnnotationEditor';
 import { OffPathDialog } from '../../src/create/OffPathDialog';
 import { dangerOptions, interestOptions } from '../../src/create/routeMetadata';
 import type { RouteNote, RouteVariant } from '../../src/create/routeMetadata';
+import { estimateWalkMinutes } from '../../src/walkDetails';
 
 const MAP_DEFAULT_REGION = { latitude: 48.85, longitude: 2.35, latitudeDelta: .025, longitudeDelta: .025 };
 const steps = ['Tracer', 'Affiner', 'Finaliser'];
@@ -40,13 +41,17 @@ export default function CreateScreen() {
   const [environment, setEnvironment] = useState('forest');
   const [difficulty, setDifficulty] = useState('easy');
   const [dogFreedom, setDogFreedom] = useState('free');
-  const [duration, setDuration] = useState('30');
+  const [durationOverrides, setDurationOverrides] = useState<Record<string, string>>({});
   const variants = bank.map((v, i) => i === active ? { ...v, draft: c.draft } : v);
+  const variantDetails = variants.map(variant => {
+    const distanceKm = stats(variant.draft).distanceKm;
+    return { ...variant, distanceKm, estimate: estimateWalkMinutes(distanceKm, environment, difficulty) };
+  });
   const totals = stats(c.draft);
   const isClosed = closed(c.draft);
   const recording = c.recorder.recording || c.recorder.starting;
   const editable = step === 1 && !c.locked;
-  const annotations = c.draft.annotations || [];
+  const annotations = c.annotations;
   const changeStep = (value: number) => {
     setPanelOpen(false); setMovingPoint(false); c.setSelection(null); c.setPreview(value === 2); c.setError(''); setStep(value); scroll.current?.scrollTo({ y: 0, animated: true });
   };
@@ -66,9 +71,13 @@ export default function CreateScreen() {
   };
   const removeVariant = () => {
     if (c.locked || active === 0) return;
+    resetDuration(variants[active].name);
     const remaining = variants.filter((_, i) => i !== active);
     setBank(remaining); setActive(0); c.replaceDraft(remaining[0].draft); changeStep(2);
   };
+  const resetDuration = (name: string) => setDurationOverrides(previous => {
+    const next = { ...previous }; delete next[name]; return next;
+  });
   const openNote = (coordinate: LatLng) => setNote({ id: `note-${Date.now()}`, kind: 'poi', type: 'other', coordinate, description: '' });
   const clearActive = () => variants.length > 1 ? c.replaceDraft({ ...emptyDraft(), start: variants[0].draft.start }) : c.clear();
   const selectPoint = (index: number) => { setPanelOpen(true); setMovingPoint(false); c.selectPoint(index); };
@@ -82,10 +91,12 @@ export default function CreateScreen() {
     c.setError('');
     if (!user) { c.setError('Connectez-vous pour publier.'); return; }
     if (!title.trim()) { c.setError('Donnez un titre à votre balade.'); return; }
-    if (!/^\d+$/.test(duration) || Number(duration) < 1) { c.setError('Saisissez une durée positive en minutes.'); return; }
+    const routes = variantDetails.map(v => ({ ...v, durationMin: Number(durationOverrides[v.name]?.trim() || v.estimate) }));
+    const invalid = routes.find(v => !/^\d*$/.test(durationOverrides[v.name]?.trim() || '') || !Number.isSafeInteger(v.durationMin) || v.durationMin < 1);
+    if (invalid) { c.setError(`Saisissez une durée positive en minutes pour l’itinéraire ${invalid.name}.`); return; }
     try {
-      const walk = await c.publish({ title: title.trim(), description: description.trim(), environment, difficulty, dog_freedom: dogFreedom, duration_min: Number(duration) }, variants);
-      c.clear(); setBank([{ name: 'A', draft: emptyDraft() }]); setActive(0); setStep(0); setChosenMode(false); setTitle(''); setDescription(''); setDuration('30');
+      const walk = await c.publish({ title: title.trim(), description: description.trim(), environment, difficulty, dog_freedom: dogFreedom, duration_min: routes[0].durationMin }, routes);
+      c.clear(); c.resetAnnotations(); setBank([{ name: 'A', draft: emptyDraft() }]); setActive(0); setStep(0); setChosenMode(false); setTitle(''); setDescription(''); setDurationOverrides({});
       router.push(`/walk/${walk.id}`);
     } catch (e: any) { c.setError(e.message || 'Publication impossible. Vos itinéraires sont conservés.'); }
   };
@@ -156,21 +167,25 @@ export default function CreateScreen() {
           <Text style={styles.hint}>Vert : libre · orange : prudence · rouge : laisse.</Text>
         </>}
         {step < 2 && <>
-          <Text style={styles.label}>Repères · {annotations.length}</Text><Text style={styles.hint}>Maintenez un doigt sur la carte pour signaler un point d’intérêt ou un danger. Touchez un repère pour le corriger.</Text>
+          <Text style={styles.label}>Repères communs · {annotations.length}</Text><Text style={styles.hint}>Maintenez un doigt sur la carte pour ajouter un repère à toutes les boucles.</Text>
           {annotations.map(n => <Pressable key={n.id} testID={`edit-${n.id}`} style={styles.card} onPress={() => setNote(n)}><Text style={styles.text}>{n.kind === 'hazard' ? '⚠' : '★'} {(n.kind === 'hazard' ? dangerOptions : interestOptions)[n.type]}</Text>{!!n.description && <Text style={styles.hint}>{n.description}</Text>}</Pressable>)}
         </>}
         {step === 2 && <>
           <Text style={styles.label}>Votre balade</Text>
           <TextInput testID="walk-title" accessibilityLabel="Titre de la balade" style={styles.input} placeholder="Un titre qui donne envie" placeholderTextColor={colors.muted} value={title} onChangeText={setTitle} />
           <TextInput testID="walk-desc" accessibilityLabel="Description de la balade" style={[styles.input, { minHeight: 100 }]} placeholder="Ambiance, accès, conseils pour venir avec son chien…" placeholderTextColor={colors.muted} value={description} onChangeText={setDescription} multiline />
-          <Text style={styles.hint}>Durée de l’itinéraire A, en minutes</Text><TextInput testID="walk-duration" accessibilityLabel="Durée en minutes" style={styles.input} value={duration} onChangeText={setDuration} keyboardType="number-pad" />
           <Choices prefix="env" label="Environnement" options={{ forest: 'Forêt', fields: 'Campagne', city: 'Ville', beach: 'Plage', mountain: 'Montagne', mixed: 'Mixte' }} value={environment} onChange={setEnvironment} />
           <Choices prefix="diff" label="Difficulté" options={{ easy: 'Facile', moderate: 'Modérée', sporty: 'Sportive' }} value={difficulty} onChange={setDifficulty} />
           <Choices prefix="dogfree" label="Liberté globale" options={{ free: 'Sans laisse', partial: 'Selon les portions', leash: 'En laisse' }} value={dogFreedom} onChange={setDogFreedom} />
           <Text style={styles.label}>Une balade, plusieurs boucles</Text><Text style={styles.hint}>A est l’itinéraire principal. Vous pouvez dessiner une autre boucle depuis le même départ, ou retoucher une copie de l’itinéraire affiché.</Text>
-          {variants.map((v, i) => <View key={v.name} style={styles.card} testID={`variant-${v.name}`}>
-            <Text style={styles.text}>Itinéraire {v.name}{i === 0 ? ' · principal' : ''} · {stats(v.draft).distanceKm.toFixed(2)} km</Text>
+          {variantDetails.map((v, i) => <View key={v.name} style={styles.card} testID={`variant-${v.name}`}>
+            <Text style={styles.text}>Itinéraire {v.name}{i === 0 ? ' · principal' : ''} · {v.distanceKm.toFixed(2)} km</Text>
             <Text style={closed(v.draft) && usable(v.draft) ? styles.notice : styles.error}>{closed(v.draft) && usable(v.draft) ? 'Boucle complète' : 'À terminer avant publication'}</Text>
+            <Text style={styles.hint}>Durée en minutes · estimation {v.estimate} min</Text>
+            <TextInput testID={i === 0 ? 'walk-duration' : `walk-duration-${v.name}`} accessibilityLabel={`Durée de l’itinéraire ${v.name} en minutes`}
+              style={styles.input} value={durationOverrides[v.name] ?? String(v.estimate)} placeholder={String(v.estimate)}
+              onChangeText={duration => setDurationOverrides(previous => ({ ...previous, [v.name]: duration }))} keyboardType="number-pad" />
+            {v.name in durationOverrides && <Action id={`reset-duration-${v.name}`} label="Utiliser l’estimation" disabled={c.locked} onPress={() => resetDuration(v.name)} />}
             <View style={styles.row}><Action id={`edit-variant-${v.name}`} label="Retoucher" disabled={c.locked} onPress={() => switchVariant(i)} />
               <Action id={`trace-variant-${v.name}`} label="Revenir au tracé" disabled={c.locked} onPress={() => switchVariant(i, 0)} /></View>
           </View>)}

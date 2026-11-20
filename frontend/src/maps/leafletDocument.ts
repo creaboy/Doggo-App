@@ -139,6 +139,7 @@ window.addEventListener('unhandledrejection', function(){ post({type:'error'}); 
     layers.forEach(function(l){ map.removeLayer(l); });
     layers = [];
     var all = [];
+    var selectedLayers = [];
     (data.segments || []).forEach(function(seg,index){
       if (!seg.coordinates || seg.coordinates.length < 2) return;
       var pts = seg.coordinates.map(function(c){ return [c.latitude, c.longitude]; });
@@ -146,12 +147,14 @@ window.addEventListener('unhandledrejection', function(){ post({type:'error'}); 
       var color = seg.freedom === 'free' ? '${colors.success}' : seg.freedom === 'caution' ? '${colors.warning}' : '${colors.error}';
       var selected = data.selectedSegmentIndex===index;
       var dash = seg.offPath || seg.pending ? '8 8' : null;
-      var casing = L.polyline(pts, {color:'${colors.surfaceSecondary}', weight: selected ? 12 : 8, opacity:.95, interactive:false,dashArray:dash}).addTo(map);
+      var casing = L.polyline(pts, {color:selected ? '#E600C8' : '${colors.surfaceSecondary}', weight: selected ? 15 : 8, opacity:.95, interactive:false,dashArray:dash}).addTo(map);
       layers.push(casing);
-      var pl = L.polyline(pts, {color: seg.pending ? '${colors.warning}' : color, weight: selected ? 8 : 5, dashArray:dash}).addTo(map);
+      var pl = L.polyline(pts, {color: seg.pending ? '${colors.warning}' : color, weight: selected ? 8 : 5, interactive:false, dashArray:dash}).addTo(map);
       layers.push(pl);
+      if(selected) selectedLayers.push(casing, pl);
       if(data.segmentEditable){ var hit=L.polyline(pts,{weight:44,opacity:0}).addTo(map); hit.on('click',function(e){L.DomEvent.stopPropagation(e);if(Date.now()>=suppressClickUntil) post({type:'segmentPress',index:index,lat:e.latlng.lat,lng:e.latlng.lng});});layers.push(hit); }
     });
+    selectedLayers.forEach(function(layer){ layer.bringToFront(); });
     (data.markers || []).forEach(function(m){
       var selected = m.pointIndex !== undefined && m.pointIndex === data.selectedPointIndex;
       var icons = m.icon && Object.prototype.hasOwnProperty.call(iconPaths, m.icon.kind) && iconPaths[m.icon.kind];

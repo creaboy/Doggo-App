@@ -6,7 +6,7 @@ export const interestOptions: Record<string, string> = { water: 'Eau', swimming:
 export const dangerOptions: Record<string, string> = { cars: 'Route dangereuse', crossing: 'Traversée de route à surveiller', caterpillars: 'Chenilles', boars: 'Sangliers', livestock: 'Troupeaux', aggressive_dogs: 'Chiens agressifs', toxic: 'Plantes / aliments toxiques', hunting: 'Chasse', path_closed: 'Passage fermé / obstacle', dogs_prohibited: 'Chiens interdits', other: 'Autre danger' };
 export type RouteNote = { id: string; kind: 'poi' | 'hazard'; type: string; coordinate: LatLng; description: string };
 export type SegmentDetails = { features?: string[]; interests?: string[]; dangers?: string[]; notes?: string };
-export type RouteVariant = { name: string; draft: Draft };
+export type RouteVariant = { name: string; draft: Draft; durationMin?: number };
 
 export function serializeSegments(legs: Leg[]) {
   return legs.map(({ freedom, coordinates, offPath = false, features = [], interests = [], dangers = [], notes = '' }) => ({
@@ -18,5 +18,5 @@ export function serializeNotes(notes: RouteNote[] = []) {
   return { pois: serialize('poi'), hazards: serialize('hazard') };
 }
 export function serializeVariant(variant: RouteVariant) {
-  return { name: variant.name, segments: serializeSegments(variant.draft.legs), ...serializeNotes(variant.draft.annotations) };
+  return { name: variant.name, segments: serializeSegments(variant.draft.legs), duration_min: variant.durationMin };
 }

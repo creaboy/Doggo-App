@@ -14,6 +14,7 @@ import type { RouteNote, SegmentDetails, RouteVariant } from './create/routeMeta
 
 export function useWalkCreation() {
   const [draft, setDraft] = useState<Draft>(emptyDraft);
+  const [annotations, setAnnotations] = useState<RouteNote[]>([]);
   const current = useRef(draft);
   const history = useRef<Draft[]>([]);
   const [mode, setMode] = useState<'draw' | 'record'>('draw');
@@ -150,12 +151,11 @@ export function useWalkCreation() {
   };
   const saveAnnotation = (note: RouteNote) => {
     if (working.current) return;
-    const annotations = current.current.annotations || [];
-    commit({ ...current.current, annotations: [...annotations.filter(n => n.id !== note.id), note] }, !recorder.recording);
+    setAnnotations(previous => [...previous.filter(n => n.id !== note.id), note]);
   };
   const removeAnnotation = (id: string) => {
     if (working.current) return;
-    commit({ ...current.current, annotations: (current.current.annotations || []).filter(n => n.id !== id) }, !recorder.recording);
+    setAnnotations(previous => previous.filter(n => n.id !== id));
   };
   const replaceDraft = (next: Draft) => {
     if (locked || working.current) return;
@@ -208,7 +208,7 @@ export function useWalkCreation() {
     try {
       return await api('/walks', { method: 'POST', body: JSON.stringify({ ...details,
         segments: serializeSegments(main.legs),
-        features: [...new Set(main.legs.flatMap(s => s.features || []))], ...serializeNotes(main.annotations),
+        features: [...new Set(main.legs.flatMap(s => s.features || []))], ...serializeNotes(annotations),
         variants: routes.slice(1).map(serializeVariant),
       }) });
     } finally { working.current = false; setBusy(''); }
@@ -222,7 +222,7 @@ export function useWalkCreation() {
       commit({ ...current.current, legs: current.current.legs.map((l, i) => i === index ? resolved : l) }, true);
     });
   };
-  return { draft, mode, setMode, drawingPath, setDrawingPath, pathConfirmation, answerPath, changeSegmentPath, freedom, setFreedom, preview, setPreview, gps, selection, selectSegment, selectPoint, removePoint, setSelection, splitSelected,
+  return { draft, annotations, resetAnnotations: () => setAnnotations([]), mode, setMode, drawingPath, setDrawingPath, pathConfirmation, answerPath, changeSegmentPath, freedom, setFreedom, preview, setPreview, gps, selection, selectSegment, selectPoint, removePoint, setSelection, splitSelected,
     finishOpen, error, setError, notice, busy, locked, recorder, tap, undo, clear, closeManual, snap,
     start, stop, continueRecording, finishReturn, showPreview, updateFreedom, updateDetails, saveAnnotation, removeAnnotation, replaceDraft, markSegment, movePoint, publish };
 }

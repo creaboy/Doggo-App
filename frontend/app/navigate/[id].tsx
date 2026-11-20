@@ -16,6 +16,7 @@ import { dangerOptions, interestOptions } from '../../src/create/routeMetadata';
 import type { RouteNote } from '../../src/create/routeMetadata';
 import { colors } from '../../src/theme';
 import { useWalkPresence } from '../../src/social';
+import { mergeWalkNotes } from '../../src/walkDetails';
 
 type Report = { id?: string; type: string; lat: number; lng: number; description?: string; status?: 'active' | 'resolved'; index?: number };
 type SavedRoute = {
@@ -60,7 +61,7 @@ function WalkNavigation({ id, variant }: { id: string; variant: string }) {
 
   const mergeReports = useCallback((result: WalkData) => {
     const selected = result.walk.variants?.find(route => route.name === variant);
-    return [...(result.hazards || []), ...(selected?.hazards || []).map((report, index) => ({ ...report, index }))];
+    return mergeWalkNotes(result.hazards || [], (selected?.hazards || []).map((report, index) => ({ ...report, index })));
   }, [variant]);
 
   useEffect(() => {
@@ -112,7 +113,7 @@ function WalkNavigation({ id, variant }: { id: string; variant: string }) {
     .filter(({ match }) => match && match.gap <= 45), [reports, route]);
   const markers = useMemo<MarkerInput[]>(() => {
     if (!start || !data) return [];
-    const pois = selected?.pois || data.pois || [];
+    const pois = mergeWalkNotes(data.pois || [], selected?.pois || []);
     return [
       { id: 'departure', coordinate: start, color: walkColor(data.walk), icon: { kind: 'walk' }, label: 'Départ' },
       ...pois.map((poi, i): MarkerInput => ({ id: `poi-${i}`, coordinate: coordinateOf(poi), icon: { kind: 'poi', type: poi.type }, color: colors.brandSecondary, label: interestOptions[poi.type] })),
