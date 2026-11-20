@@ -15,6 +15,7 @@ from datetime import datetime, timezone, timedelta
 from route_geometry import validate_loop, meters
 from walking_routing import snap_points, match_points
 from dog_profiles import DogProfile, normalize_photo
+from social import member_view, social_router
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -351,10 +352,11 @@ async def member_dog(member_id: str, user=Depends(current_user)):
     dog = await db.dog_profiles.find_one({"_id": member_id, "visible": True}, {"_id": 0})
     if not dog:
         raise HTTPException(404, "Aucune fiche chien partagée.")
-    member = await db.users.find_one({"user_id": member_id}, {"_id": 0, "username": 1})
+    member = await db.users.find_one({"user_id": member_id}, {"_id": 0, "user_id": 1, "username": 1, "social": 1})
     if not member:
         raise HTTPException(404, "Aucune fiche chien partagée.")
-    return {"owner_name": member["username"], "dog": DogProfile.model_validate(dog).model_dump(exclude={"visible"})}
+    owner = member_view({**member, "user_id": member_id})
+    return {"owner_name": owner["name"], "owner_bio": owner["bio"], "dog": DogProfile.model_validate(dog).model_dump(exclude={"visible"})}
 
 
 def _compute_distance(segments: List[RouteSegment]) -> float:
@@ -950,9 +952,12 @@ async def on_startup():
     await db.users.create_index("user_id", unique=True)
     await db.user_sessions.create_index("session_token", unique=True)
     await db.walks.create_index("id", unique=True)
+    await db.friendships.create_index("members")
+    await db.users.create_index("social.area_key", sparse=True)
     await seed_data()
 
 
+api_router.include_router(social_router(lambda: db, current_user))
 app.include_router(api_router)
 
 app.add_middleware(

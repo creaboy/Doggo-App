@@ -16,6 +16,7 @@ export const audiences = [
 ] as const;
 export type DogProfile = Record<typeof audiences[number]['key'], Temperament> & {
   name: string;
+  bio?: string;
   age_months: number;
   photo_jpeg: string | null;
   visible: boolean;
@@ -40,6 +41,7 @@ export function DogCard({ dog, owner }: { dog: Omit<DogProfile, 'visible'>; owne
         {!!owner && <Text style={styles.detail}>Avec {owner}</Text>}
       </View>
     </View>
+    {!!dog.bio && <Text style={styles.detail}>{dog.bio}</Text>}
     {audiences.map(({ key, label }) => <View key={key} style={styles.relationship}>
       <Text style={styles.detail}>{label}</Text>
       <Text style={styles.status}>{temperaments.find(option => option.value === dog[key])?.label}</Text>

@@ -15,6 +15,7 @@ import { AnnotationEditor } from '../../src/create/AnnotationEditor';
 import { dangerOptions, interestOptions } from '../../src/create/routeMetadata';
 import type { RouteNote } from '../../src/create/routeMetadata';
 import { colors } from '../../src/theme';
+import { useWalkPresence } from '../../src/social';
 
 type Report = { id?: string; type: string; lat: number; lng: number; description?: string; status?: 'active' | 'resolved'; index?: number };
 type SavedRoute = {
@@ -92,6 +93,7 @@ function WalkNavigation({ id, variant }: { id: string; variant: string }) {
     coordinates: segment.coordinates.map(([latitude, longitude]) => ({ latitude, longitude })),
   })), [saved]);
   const route = useMemo(() => buildNavigation(segments), [segments]);
+  useWalkPresence(id, variant, progress.started && !progress.arrived && route.edges.length > 0);
   const region = useMemo(() => regionFor({ start: segments[0]?.coordinates[0] || null, legs: segments.map(segment => ({ ...segment, source: 'draw' })) }), [segments]);
   const precise = gps.status === 'live' && gps.coordinate && gps.accuracy !== null && gps.accuracy <= 35;
 

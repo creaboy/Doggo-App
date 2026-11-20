@@ -16,6 +16,7 @@ export default function EditDogProfile() {
   const [loadFailed, setLoadFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [name, setName] = useState('');
+  const [bio, setBio] = useState('');
   const [years, setYears] = useState('');
   const [months, setMonths] = useState('');
   const [relationships, setRelationships] = useState<Partial<Record<typeof audiences[number]['key'], Temperament>>>({});
@@ -30,6 +31,7 @@ export default function EditDogProfile() {
     api('/me/dog').then((dog: DogProfile | null) => {
       if (!active || !dog) return;
       setName(dog.name);
+      setBio(dog.bio || '');
       setYears(String(Math.floor(dog.age_months / 12)));
       setMonths(String(dog.age_months % 12));
       setRelationships({ dogs: dog.dogs, adults: dog.adults, children: dog.children });
@@ -75,7 +77,7 @@ export default function EditDogProfile() {
     try {
       const dog: DogProfile = await api('/me/dog', {
         method: 'PUT',
-        body: JSON.stringify({ name: name.trim(), age_months: age, dogs, adults, children, photo_jpeg: photo, visible }),
+        body: JSON.stringify({ name: name.trim(), bio: bio.trim(), age_months: age, dogs, adults, children, photo_jpeg: photo, visible }),
       });
       setSaved(dog);
       setPhoto(dog.photo_jpeg);
@@ -127,6 +129,10 @@ export default function EditDogProfile() {
           })}
         </View>
       </View>)}
+      <Text style={styles.label}>Description</Text>
+      <TextInput accessibilityLabel="Description du chien" value={bio} onChangeText={setBio} maxLength={240} multiline
+        placeholder="Présente ton chien en quelques mots" placeholderTextColor={colors.muted}
+        style={[styles.input, { minHeight: 68, textAlignVertical: 'top', paddingVertical: spacing.sm }]} editable={!busy} />
       <View style={styles.sharing}>
         <View style={styles.flex}><Text style={styles.label}>Partager la fiche</Text>
           <Text style={styles.help}>Les membres pourront la voir depuis tes balades publiées.</Text>

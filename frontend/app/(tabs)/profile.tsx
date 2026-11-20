@@ -1,12 +1,13 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
-import { CaretRight, PawPrint, SignOut, Star, PathIcon } from "phosphor-react-native";
+import { useFocusEffect, useRouter } from "expo-router";
+import { CaretRight, PawPrint, SignOut, Star, PathIcon, Users } from "phosphor-react-native";
 import { useAuth } from "../../src/AuthContext";
 import { colors, radius, spacing } from "../../src/theme";
 import { api } from "../../src/api";
 import { formatDuration, environmentLabels, difficultyLabels, timeAgo } from "../../src/labels";
+import type { SocialProfile } from "../../src/social";
 
 export default function ProfileScreen() {
   const { user, logout } = useAuth();
@@ -15,6 +16,16 @@ export default function ProfileScreen() {
   const [walks, setWalks] = useState<any[]>([]);
   const [activity, setActivity] = useState<{ comments: any[]; ratings: any[] } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [social, setSocial] = useState<SocialProfile>();
+
+  useFocusEffect(useCallback(() => {
+    if (!user) return;
+    let active = true;
+    void api('/me/social').then((profile: SocialProfile) => {
+      if (active) setSocial(profile);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [user]));
 
   useEffect(() => {
     if (!user) { setLoading(false); return; }
@@ -46,6 +57,7 @@ export default function ProfileScreen() {
         <View style={{ flex: 1 }}>
           <Text style={styles.name} testID="profile-username">{user.username}</Text>
           <Text style={styles.email}>{user.email}</Text>
+          {!!social?.bio && <Text style={styles.email}>{social.bio}</Text>}
         </View>
         <Pressable testID="logout-btn" onPress={logout} style={styles.iconBtn}>
           <SignOut size={20} color={colors.onSurface} />
@@ -55,6 +67,11 @@ export default function ProfileScreen() {
       <Pressable accessibilityRole="button" testID="open-dog-profile" style={styles.dogLink} onPress={() => router.push('/dog-profile')}>
         <PawPrint size={23} color={colors.brandPrimary} />
         <Text style={[styles.name, { flex: 1 }]}>Mon chien</Text>
+        <CaretRight size={18} color={colors.muted} />
+      </Pressable>
+      <Pressable accessibilityRole="button" testID="open-friends" style={styles.dogLink} onPress={() => router.push('/friends')}>
+        <Users size={23} color={colors.brandPrimary} />
+        <Text style={[styles.name, { flex: 1 }]}>Amis</Text>
         <CaretRight size={18} color={colors.muted} />
       </Pressable>
       <View style={styles.statsRow}>

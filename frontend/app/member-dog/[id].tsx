@@ -7,7 +7,7 @@ import { DogCard } from '../../src/DogProfile';
 import type { DogProfile } from '../../src/DogProfile';
 import { colors, spacing } from '../../src/theme';
 
-type SharedDog = { owner_name: string; dog: Omit<DogProfile, 'visible'> };
+type SharedDog = { owner_name: string; owner_bio?: string; dog: Omit<DogProfile, 'visible'> };
 
 export default function SharedDogScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -31,7 +31,10 @@ export default function SharedDogScreen() {
       <Text style={{ color: colors.brandPrimary, fontWeight: '700' }}>‹ Retour</Text>
     </Pressable>
     {result === undefined ? <ActivityIndicator color={colors.brandPrimary} />
-      : result ? <DogCard dog={result.dog} owner={result.owner_name} />
+      : result ? <>
+        <DogCard dog={result.dog} owner={result.owner_name} />
+        {!!result.owner_bio && <Text style={{ color: colors.onSurface }}>{result.owner_bio}</Text>}
+      </>
       : <Text style={{ color: colors.onSurface }}>Cette fiche chien n’est pas disponible.</Text>}
   </ScrollView>;
 }

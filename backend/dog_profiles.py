@@ -11,6 +11,7 @@ Temperament = Literal["friendly", "ok", "not_ok"]
 
 class DogProfile(BaseModel):
     name: str = Field(min_length=1, max_length=40)
+    bio: str = Field(default="", max_length=240)
     age_months: int = Field(ge=0, le=360)
     dogs: Temperament
     adults: Temperament
